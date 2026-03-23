@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📱 MMS 자동 생성기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy:       #0a1628;
+  --navy-light: #152038;
+  --navy-mid:   #1c2d4a;
+  --yellow:     #FFE500;
+  --yellow-dim: rgba(255,229,0,0.15);
+  --white:      #ffffff;
+  --gray:       #7a8899;
+  --border:     rgba(255,255,255,0.1);
+  --success:    #4ade80;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,sans-serif;
+  background:var(--navy);color:var(--white);min-height:100vh;
+}
+
+/* ── HEADER ── */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 28px;
+  background:rgba(10,22,40,.96);
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:200;
+  backdrop-filter:blur(12px);
+}
+.brand{font-size:18px;font-weight:900;color:var(--yellow);letter-spacing:-0.5px;}
+.brand span{color:rgba(255,255,255,.5);font-weight:400;font-size:13px;margin-left:8px;}
+header button{
+  background:var(--navy-mid);border:1px solid var(--border);color:var(--white);
+  padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;
+  transition:border-color .2s;
+}
+header button:hover{border-color:var(--yellow);}
+
+/* ── MODAL ── */
+.modal{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:1000;place-items:center;backdrop-filter:blur(6px);
+}
+.modal.show{display:grid;}
+.modal-box{
+  background:var(--navy-light);border:1px solid var(--border);
+  border-radius:18px;padding:32px;width:440px;max-width:92vw;
+}
+.modal-box h2{font-size:18px;margin-bottom:6px;}
+.modal-box p{font-size:13px;color:var(--gray);margin-bottom:20px;line-height:1.6;}
+.modal-box input{
+  width:100%;background:var(--navy);border:1px solid var(--border);
+  color:var(--white);padding:12px 16px;border-radius:8px;font-size:14px;
+  margin-bottom:6px;font-family:inherit;
+}
+.modal-box input:focus{outline:none;border-color:var(--yellow);}
+.modal-hint{font-size:12px;color:var(--gray);margin-bottom:22px;}
+.modal-hint a{color:var(--yellow);text-decoration:none;}
+.btn-row{display:flex;gap:10px;justify-content:flex-end;}
+.btn-row button{
+  padding:10px 22px;border-radius:8px;border:1px solid var(--border);
+  cursor:pointer;font-size:14px;background:transparent;color:var(--white);
+  transition:all .2s;font-family:inherit;
+}
+.btn-row .btn-primary{
+  background:var(--yellow)!important;color:var(--navy)!important;
+  border-color:var(--yellow)!important;font-weight:700!important;
+}
+.btn-row .btn-primary:hover{background:#ffd700!important;}
+
+/* ── MAIN GRID ── */
+main{
+  display:grid;grid-template-columns:400px 1fr;
+  gap:20px;padding:20px 28px;max-width:1380px;margin:0 auto;
+  min-height:calc(100vh - 57px);
+}
+@media(max-width:900px){main{grid-template-columns:1fr;}}
+
+/* ── PANELS ── */
+.panel{
+  background:var(--navy-light);border:1px solid var(--border);
+  border-radius:16px;padding:24px;
+}
+.panel-title{
+  font-size:15px;font-weight:700;color:var(--yellow);
+  margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;
+}
+
+/* ── FORM ── */
+.form-group{margin-bottom:18px;}
+.form-label{
+  display:block;font-size:11px;font-weight:700;color:var(--gray);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;
+}
+.opt{text-transform:none;font-weight:400;font-size:11px;}
+
+/* Toggle */
+.toggle-wrap{
+  display:flex;background:var(--navy);border:1px solid var(--border);
+  border-radius:10px;padding:5px;gap:6px;
+}
+.toggle{
+  flex:1;padding:10px;border:none;background:transparent;color:var(--gray);
+  border-radius:7px;cursor:pointer;font-size:15px;font-weight:700;
+  transition:all .2s;font-family:inherit;
+}
+.toggle.active{background:var(--yellow);color:var(--navy);}
+
+/* Select */
+.sel{
+  width:100%;background:var(--navy);border:1px solid var(--border);
+  color:var(--white);padding:11px 14px;border-radius:8px;font-size:14px;
+  cursor:pointer;font-family:inherit;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%237a8899' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;
+  transition:border-color .2s;
+}
+.sel:focus{outline:none;border-color:var(--yellow);}
+
+/* Model thumb */
+.model-thumb{
+  margin-top:10px;height:72px;display:flex;align-items:center;
+  justify-content:center;background:var(--navy);border-radius:8px;
+  border:1px solid var(--border);overflow:hidden;
+}
+.model-thumb img{max-height:68px;max-width:160px;object-fit:contain;}
+.model-thumb .thumb-empty{font-size:12px;color:var(--gray);}
+
+/* Inputs */
+.inp,.textarea{
+  width:100%;background:var(--navy);border:1px solid var(--border);
+  color:var(--white);padding:11px 14px;border-radius:8px;font-size:14px;
+  transition:border-color .2s;font-family:inherit;
+}
+.inp:focus,.textarea:focus{outline:none;border-color:var(--yellow);}
+.inp::placeholder,.textarea::placeholder{color:var(--gray);}
+.textarea{resize:vertical;line-height:1.6;}
+.price-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-bottom:8px;}
+.price-row .arrow{color:var(--gray);text-align:center;font-size:18px;}
+.date-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;}
+.date-row .tilde{color:var(--gray);text-align:center;}
+
+/* Tags */
+.tag-wrap{display:flex;flex-wrap:wrap;gap:8px;}
+.tag{
+  padding:7px 14px;background:var(--navy);border:1px solid var(--border);
+  color:var(--gray);border-radius:20px;cursor:pointer;font-size:13px;
+  transition:all .2s;font-family:inherit;
+}
+.tag.active{background:var(--yellow-dim);border-color:var(--yellow);color:var(--yellow);}
+
+/* Upload zone */
+.upload-zone{
+  border:2px dashed var(--border);border-radius:8px;padding:14px;
+  text-align:center;cursor:pointer;transition:all .2s;
+  background:var(--navy);
+}
+.upload-zone:hover{border-color:var(--yellow);background:rgba(255,229,0,.04);}
+.upload-zone p{font-size:12px;color:var(--gray);line-height:1.5;}
+.upload-zone input[type=file]{display:none;}
+#customThumbPreview{
+  max-height:60px;max-width:140px;object-fit:contain;display:none;margin:6px auto 0;
+}
+
+/* Generate Button */
+.btn-gen{
+  width:100%;padding:17px;background:var(--yellow);color:var(--navy);
+  border:none;border-radius:12px;font-size:17px;font-weight:900;cursor:pointer;
+  margin-top:6px;transition:all .25s;letter-spacing:-.3px;font-family:inherit;
+}
+.btn-gen:hover{background:#ffd700;transform:translateY(-1px);box-shadow:0 8px 28px rgba(255,229,0,.3);}
+.btn-gen:active{transform:translateY(0);}
+.btn-gen:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none;}
+
+/* ── PREVIEW PANEL ── */
+.panel-preview{display:flex;flex-direction:column;}
+.preview-wrap{
+  position:relative;width:100%;aspect-ratio:1;background:var(--navy);
+  border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px;
+}
+#previewCanvas{width:100%;height:100%;display:block;}
+.empty-state{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;color:var(--gray);text-align:center;
+  font-size:14px;line-height:1.8;gap:8px;
+}
+.empty-icon{font-size:40px;opacity:.4;}
+
+/* Loading */
+.loading-overlay{
+  display:none;position:absolute;inset:0;
+  background:rgba(10,22,40,.92);flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;border-radius:12px;z-index:10;
+}
+.loading-overlay.show{display:flex;}
+.spinner{
+  width:46px;height:46px;border:3px solid rgba(255,255,255,.1);
+  border-top-color:var(--yellow);border-radius:50%;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-step{font-size:14px;color:rgba(255,255,255,.7);}
+
+/* MMS text box */
+.mms-box{
+  background:var(--navy);border:1px solid var(--border);border-radius:12px;
+  padding:16px;margin-bottom:14px;display:none;
+}
+.mms-box.show{display:block;}
+.mms-head{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:10px;
+}
+.mms-head span{font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.5px;}
+.mms-head button{
+  background:var(--navy-mid);border:1px solid var(--border);color:var(--white);
+  padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;
+  transition:all .2s;font-family:inherit;
+}
+.mms-head button:hover{border-color:var(--yellow);color:var(--yellow);}
+#mmsText{font-size:14px;line-height:1.75;white-space:pre-wrap;word-break:keep-all;}
+.char-info{
+  display:flex;justify-content:flex-end;margin-top:8px;
+  font-size:11px;color:var(--gray);gap:12px;
+}
+.char-info .warn{color:#f97316;}
+
+/* Action buttons */
+.action-row{display:flex;gap:10px;display:none;}
+.action-row.show{display:flex;}
+.btn-dl{
+  flex:2;padding:15px;background:var(--yellow);color:var(--navy);
+  border:none;border-radius:10px;font-size:15px;font-weight:900;cursor:pointer;
+  transition:all .2s;font-family:inherit;
+}
+.btn-dl:hover{background:#ffd700;box-shadow:0 4px 18px rgba(255,229,0,.3);}
+.btn-regen{
+  flex:1;padding:15px;background:transparent;border:1px solid var(--border);
+  color:var(--white);border-radius:10px;font-size:14px;cursor:pointer;
+  transition:all .2s;font-family:inherit;
+}
+.btn-regen:hover{border-color:var(--yellow);color:var(--yellow);}
+
+/* Image style selector */
+.style-row{display:flex;gap:6px;margin-bottom:14px;}
+.style-btn{
+  flex:1;padding:8px;background:var(--navy);border:1px solid var(--border);
+  color:var(--gray);border-radius:8px;cursor:pointer;font-size:12px;
+  transition:all .2s;text-align:center;font-family:inherit;
+}
+.style-btn.active{border-color:var(--yellow);color:var(--yellow);background:var(--yellow-dim);}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:24px;right:24px;background:var(--navy-mid);
+  border:1px solid var(--border);border-radius:10px;padding:12px 18px;
+  font-size:13px;z-index:9999;transform:translateY(80px);opacity:0;
+  transition:all .3s;pointer-events:none;
+}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.success{border-color:var(--success);color:var(--success);}
+.toast.error{border-color:#f87171;color:#f87171;}
+
+/* ── FILE PROTOCOL BANNER */
+.proto-banner{
+  display:none;background:#7c2d12;border-bottom:2px solid #f97316;
+  padding:10px 28px;font-size:13px;line-height:1.6;color:#fed7aa;
+}
+.proto-banner.show{display:block;}
+.proto-banner strong{color:#fff;}
+.proto-banner code{
+  background:rgba(0,0,0,.3);padding:1px 6px;border-radius:4px;
+  font-family:monospace;font-size:12px;color:#fff;
+}
+/* ── INFO BOX */
+.info-box{
+  background:rgba(255,229,0,.06);border:1px solid rgba(255,229,0,.22);
+  border-radius:8px;padding:10px 14px;font-size:12px;color:rgba(255,229,0,.9);
+  margin-top:8px;line-height:1.6;
+}
+/* ── TEMPLATE MODE TOGGLE */
+.mode-row{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  background:var(--navy);border:1px solid var(--border);border-radius:8px;
+  margin-bottom:14px;
+}
+.mode-row input[type=checkbox]{accent-color:var(--yellow);width:15px;height:15px;cursor:pointer;flex-shrink:0;}
+.mode-row .mode-label{font-size:13px;cursor:pointer;flex:1;}
+.mode-row .mode-desc{font-size:11px;color:var(--gray);}
+
+/* ── AUTH OVERLAY ── */
+#authOverlay{
+  position:fixed;inset:0;background:var(--navy);z-index:9999;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+}
+#authOverlay.hidden{display:none;}
+.auth-screen{display:none;width:100%;max-width:440px;}
+.auth-screen.active{display:block;}
+.auth-card{
+  background:var(--navy-light);border:1px solid var(--border);
+  border-radius:20px;padding:40px 36px;
+}
+.auth-logo{font-size:26px;font-weight:900;color:var(--yellow);text-align:center;margin-bottom:6px;}
+.auth-sub{font-size:13px;color:var(--gray);text-align:center;margin-bottom:28px;line-height:1.5;}
+.auth-tab-row{display:flex;margin-bottom:26px;border-bottom:2px solid var(--border);}
+.auth-tab{
+  flex:1;padding:10px;text-align:center;font-size:14px;font-weight:600;cursor:pointer;
+  color:var(--gray);border:none;background:none;border-bottom:2px solid transparent;
+  margin-bottom:-2px;transition:all .2s;font-family:inherit;
+}
+.auth-tab.active{color:var(--yellow);border-bottom-color:var(--yellow);}
+.auth-inp{
+  width:100%;background:var(--navy);border:1px solid var(--border);
+  color:var(--white);padding:12px 14px;border-radius:8px;font-size:14px;
+  margin-bottom:12px;font-family:inherit;transition:border-color .2s;
+}
+.auth-inp:focus{outline:none;border-color:var(--yellow);}
+.auth-btn-main{
+  width:100%;padding:13px;background:var(--yellow);color:var(--navy);
+  border:none;border-radius:8px;font-size:15px;font-weight:900;
+  cursor:pointer;font-family:inherit;margin-top:4px;transition:background .2s;
+}
+.auth-btn-main:hover{background:#ffd700;}
+.auth-btn-main:disabled{opacity:.55;cursor:not-allowed;}
+.auth-msg{font-size:13px;min-height:20px;margin-bottom:10px;text-align:center;}
+.auth-msg.err{color:#f87171;} .auth-msg.ok{color:#4ade80;}
+.auth-link{font-size:13px;color:var(--gray);text-align:center;margin-top:14px;cursor:pointer;}
+.auth-link span{color:var(--yellow);text-decoration:underline;}
+.pend-icon{font-size:44px;text-align:center;margin-bottom:14px;}
+.pend-title{font-size:20px;font-weight:900;color:var(--white);text-align:center;margin-bottom:10px;}
+.pend-desc{font-size:14px;color:var(--gray);text-align:center;line-height:1.7;margin-bottom:20px;}
+.pend-box{
+  background:var(--navy);border:1px solid var(--border);border-radius:10px;
+  padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gray);line-height:1.8;
+}
+.pend-box strong{color:var(--white);}
+/* 헤더 로그인 사용자 표시 */
+.auth-user-chip{
+  font-size:12px;color:var(--gray);padding:5px 10px;
+  background:var(--navy-mid);border:1px solid var(--border);border-radius:6px;
+}
+</style>
+
+<!-- Firebase SDK (compat v10) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════
+     AUTH OVERLAY — 로그인 / 회원가입 / 승인대기
+══════════════════════════════════ -->
+<div id="authOverlay">
+
+  <!-- ① 로그인 -->
+  <div id="screenLogin" class="auth-screen active">
+    <div class="auth-card">
+      <div class="auth-logo">📱 MMS 생성기</div>
+      <div class="auth-sub">SK 대리점 전용&nbsp;·&nbsp;관리자 승인 후 사용 가능</div>
+      <div class="auth-tab-row">
+        <button class="auth-tab active" onclick="showAuthTab('login')">로그인</button>
+        <button class="auth-tab"        onclick="showAuthTab('signup')">회원가입</button>
+      </div>
+      <div id="loginMsg" class="auth-msg"></div>
+      <input id="loginEmail" class="auth-inp" type="email"    placeholder="이메일" autocomplete="email">
+      <input id="loginPw"    class="auth-inp" type="password" placeholder="비밀번호"
+             onkeydown="if(event.key==='Enter')authLogin()">
+      <button class="auth-btn-main" id="loginBtn" onclick="authLogin()">로그인</button>
+    </div>
+  </div>
+
+  <!-- ② 회원가입 -->
+  <div id="screenSignup" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-logo">📱 MMS 생성기</div>
+      <div class="auth-sub">가입 후 관리자 승인이 완료되면 이용하실 수 있습니다</div>
+      <div class="auth-tab-row">
+        <button class="auth-tab"        onclick="showAuthTab('login')">로그인</button>
+        <button class="auth-tab active" onclick="showAuthTab('signup')">회원가입</button>
+      </div>
+      <div id="signupMsg" class="auth-msg"></div>
+      <input id="signupName"  class="auth-inp" type="text"     placeholder="이름 (예: 홍길동)">
+      <input id="signupStore" class="auth-inp" type="text"     placeholder="매장명 (예: SKT 강남점)">
+      <input id="signupEmail" class="auth-inp" type="email"    placeholder="이메일" autocomplete="email">
+      <input id="signupPw"    class="auth-inp" type="password" placeholder="비밀번호 (6자 이상)"
+             onkeydown="if(event.key==='Enter')authSignup()">
+      <button class="auth-btn-main" id="signupBtn" onclick="authSignup()">가입 신청</button>
+    </div>
+  </div>
+
+  <!-- ③ 승인 대기 -->
+  <div id="screenPending" class="auth-screen">
+    <div class="auth-card">
+      <div class="pend-icon">⏳</div>
+      <div class="pend-title">승인 대기 중입니다</div>
+      <div class="pend-desc" id="pendingDesc">가입 신청이 완료되었습니다.<br>관리자가 확인 후 승인해 드립니다.</div>
+      <div class="pend-box">
+        <strong>승인 절차 안내</strong><br>
+        관리자가 신청 내역(이름·매장명)을 확인 후 승인합니다.<br>
+        승인 완료 후 아래 새로고침 버튼을 눌러주세요.
+      </div>
+      <button class="auth-btn-main" onclick="location.reload()" style="margin-bottom:12px;">새로고침 (승인 확인)</button>
+      <div class="auth-link" onclick="authLogout()">다른 계정으로 로그인 &nbsp;<span>로그아웃</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FILE:// 경고 배너 -->
+<div class="proto-banner" id="protoBanner">
+  ⚠️ <strong>로컬 파일로 열기 감지:</strong>
+  브라우저 보안 정책으로 API 요청이 차단될 수 있습니다.
+  해결: 터미널에서 <code>python3 -m http.server 8080</code> 실행 후
+  <code>http://localhost:8080/MMS_생성기.html</code> 로 접속하거나,
+  아래 <strong>「AI 없이 템플릿 생성」</strong> 모드를 사용하세요.
+</div>
+
+<!-- HEADER -->
+<header id="appHeader" style="display:none">
+  <div class="brand">📱 MMS 자동 생성기 <span>SK 대리점 전용</span></div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <span id="authUserChip" class="auth-user-chip" style="display:none"></span>
+    <button id="btnLogout" style="display:none;background:transparent;border:1px solid var(--border);color:var(--gray);padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12px;" onclick="authLogout()">로그아웃</button>
+    <button id="btnSettings">⚙️ API 설정</button>
+  </div>
+</header>
+
+<!-- SETTINGS MODAL -->
+<div id="modalSettings" class="modal">
+  <div class="modal-box">
+    <h2>🔑 Google AI Studio API 설정</h2>
+    <p>Gemini API를 사용하여 MMS 문구와 이미지를 자동 생성합니다.<br>Google AI Studio에서 무료로 API 키를 발급받을 수 있습니다.</p>
+    <input type="password" id="inputApiKey" placeholder="AIzaSy...로 시작하는 API 키 입력">
+    <p class="modal-hint">
+      API 키 발급 → <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>
+      &nbsp;|&nbsp; 입력값은 이 기기에만 저장됩니다.
+    </p>
+    <div id="apiTestResult" style="font-size:13px;margin-bottom:12px;min-height:18px;"></div>
+    <div class="btn-row">
+      <button onclick="closeSettings()">취소</button>
+      <button onclick="testApiKey()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--border);cursor:pointer;background:transparent;color:var(--white);font-family:inherit;">🔍 연결 테스트</button>
+      <button class="btn-primary" onclick="saveSettings()">저장하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<main id="appMain" style="display:none">
+
+  <!-- ── LEFT: FORM ── -->
+  <section class="panel">
+    <div class="panel-title">✏️ 행사 정보 입력</div>
+
+    <!-- 제조사 -->
+    <div class="form-group">
+      <label class="form-label">제조사</label>
+      <div class="toggle-wrap">
+        <button class="toggle active" data-brand="samsung" onclick="setBrand(this)">삼성</button>
+        <button class="toggle" data-brand="apple" onclick="setBrand(this)">애플</button>
+      </div>
+    </div>
+
+    <!-- 모델 -->
+    <div class="form-group">
+      <label class="form-label">모델 선택</label>
+      <select id="selModel" class="sel" onchange="onModelChange()">
+        <option value="">모델을 선택하세요</option>
+      </select>
+      <div class="model-thumb" id="modelThumb">
+        <span class="thumb-empty">모델을 선택하면 이미지가 표시됩니다</span>
+      </div>
+    </div>
+
+    <!-- 이미지 직접 업로드 (선택) -->
+    <div class="form-group">
+      <label class="form-label">제품 이미지 직접 업로드 <span class="opt">(선택 — CDN 이미지 대체)</span></label>
+      <label class="upload-zone" for="fileCustomImg">
+        <p>📂 클릭하여 이미지 파일 선택<br>PNG·JPG 권장 (투명 배경 PNG 최적)</p>
+        <img id="customThumbPreview" alt="업로드 이미지">
+      </label>
+      <input type="file" id="fileCustomImg" accept="image/*" onchange="onCustomImg(this)">
+    </div>
+
+    <!-- 가격 -->
+    <div class="form-group">
+      <label class="form-label">가격 정보</label>
+      <div class="price-row">
+        <input class="inp" id="inpOrig" type="text" placeholder="정가 (예: 115만원)">
+        <span class="arrow">→</span>
+        <input class="inp" id="inpDisc" type="text" placeholder="구매가 (예: 85만원)">
+      </div>
+      <div class="info-box" style="margin-bottom:8px;font-size:11px;">
+        💡 <strong>구매가</strong>는 고객이 실제 내는 금액 (이미지에 크게 표시됩니다)
+      </div>
+      <input class="inp" id="inpSaving" type="text" placeholder="할인 금액 (예: 30만원 할인)">
+    </div>
+
+    <!-- 행사 기간 -->
+    <div class="form-group">
+      <label class="form-label">행사 기간 <span class="opt">(선택)</span></label>
+      <div class="date-row">
+        <input class="inp" id="inpStart" type="date">
+        <span class="tilde">~</span>
+        <input class="inp" id="inpEnd" type="date">
+      </div>
+    </div>
+
+    <!-- 타겟 고객 -->
+    <div class="form-group">
+      <label class="form-label">타겟 고객</label>
+      <div class="tag-wrap" id="tagWrap">
+        <button class="tag" data-v="단골 고객 전용">단골 고객 전용</button>
+        <button class="tag" data-v="타사 단골 전용">타사 단골 전용</button>
+        <button class="tag" data-v="기기변경">기기변경</button>
+        <button class="tag" data-v="번호이동">번호이동</button>
+      </div>
+    </div>
+
+    <!-- 추가 혜택 -->
+    <div class="form-group">
+      <label class="form-label">추가 혜택 <span class="opt">(선택)</span></label>
+      <textarea class="textarea" id="inpBenefit" rows="2"
+        placeholder="예: 갤럭시 워치8 무료 증정 / OCB 20만원 / 제휴카드 96만원 할인"></textarea>
+    </div>
+
+    <!-- 모드 선택 -->
+    <div class="mode-row">
+      <input type="checkbox" id="chkTemplate">
+      <div>
+        <label class="mode-label" for="chkTemplate">🖼️ <strong>AI 없이 템플릿 생성</strong></label>
+        <div class="mode-desc">API 오류·Imagen 미지원 시 사용 — Gemini 없이 Canvas만으로 즉시 생성</div>
+      </div>
+    </div>
+
+    <button class="btn-gen" id="btnGen" onclick="startGenerate()">✨ MMS 생성하기</button>
+  </section>
+
+  <!-- ── RIGHT: PREVIEW ── -->
+  <section class="panel panel-preview">
+    <div class="panel-title">👁️ 미리보기</div>
+
+    <!-- Image style selector -->
+    <div class="style-row">
+      <button class="style-btn active" data-style="dark" onclick="setStyle(this)">🌑 다크 강렬</button>
+      <button class="style-btn" data-style="bright" onclick="setStyle(this)">☀️ 밝고 깔끔</button>
+      <button class="style-btn" data-style="premium" onclick="setStyle(this)">💎 프리미엄</button>
+    </div>
+
+    <!-- Canvas -->
+    <div class="preview-wrap">
+      <canvas id="previewCanvas" width="1000" height="1000"></canvas>
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🖼️</div>
+        <div>왼쪽에서 행사 정보를 입력하고<br>생성 버튼을 눌러주세요</div>
+      </div>
+      <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-step" id="loadingStep">준비 중...</div>
+      </div>
+    </div>
+
+    <!-- MMS Text -->
+    <div class="mms-box" id="mmsBox">
+      <div class="mms-head">
+        <span>📱 MMS 발송 문구</span>
+        <button onclick="copyMms()">📋 복사</button>
+      </div>
+      <div id="mmsText"></div>
+      <div class="char-info">
+        <span id="charCount">0자</span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-row" id="actionRow">
+      <button class="btn-dl" onclick="downloadJpg()">⬇️ JPG 다운로드 (1000×1000)</button>
+      <button class="btn-regen" onclick="startGenerate()">🔄 재생성</button>
+    </div>
+  </section>
+</main>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- 오류 상세 패널 (화면 하단 고정) -->
+<div id="errPanel" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;
+  background:#1a0a0a;border-top:2px solid #f87171;padding:14px 28px;font-size:13px;
+  line-height:1.8;color:#fca5a5;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
+    <div id="errPanelMsg"></div>
+    <button onclick="document.getElementById('errPanel').style.display='none'"
+      style="background:transparent;border:1px solid #f87171;color:#f87171;
+      padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0;">닫기</button>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════
+   FIREBASE 설정
+   ─ Firebase 프로젝트 생성 후 아래 값을 교체하세요
+   ─ 미입력 시 인증 없이 로컬 개발 모드로 실행됩니다
+════════════════════════════════════ */
+const FIREBASE_CONFIG = {
+  apiKey:            "FILL_IN_apiKey",
+  authDomain:        "FILL_IN.firebaseapp.com",
+  projectId:         "FILL_IN_projectId",
+  storageBucket:     "FILL_IN.appspot.com",
+  messagingSenderId: "FILL_IN_messagingSenderId",
+  appId:             "FILL_IN_appId"
+};
+
+/* ── Firebase 초기화 ── */
+let fbAuth = null, fbDb = null;
+const FB_READY = (function(){
+  if (FIREBASE_CONFIG.apiKey.startsWith('FILL_IN')) return false; // 미설정
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth = firebase.auth();
+    fbDb   = firebase.firestore();
+    return true;
+  } catch(e){ console.error('Firebase 초기화 오류', e); return false; }
+})();
+
+/* ── Auth 상태 감시 ── */
+if (FB_READY) {
+  fbAuth.onAuthStateChanged(async (user) => {
+    if (!user){ showAuthTab('login'); return; }
+    try {
+      const snap = await fbDb.collection('users').doc(user.uid).get();
+      if (snap.exists && snap.data().status === 'approved'){
+        const d = snap.data();
+        showAppContent(d.name || user.email, d.store || '');
+      } else {
+        const name = snap.exists ? snap.data().name : user.email;
+        showAuthScreen('pending', name);
+      }
+    } catch(e){ console.error(e); showAuthTab('login'); }
+  });
+} else {
+  // Firebase 미설정 → 개발 모드: 인증 없이 앱 직접 실행
+  document.getElementById('authOverlay').classList.add('hidden');
+  initApp();
+}
+
+/* ── 화면 전환 헬퍼 ── */
+function showAuthTab(tab){
+  ['login','signup','pending'].forEach(s =>
+    document.getElementById('screen'+s.charAt(0).toUpperCase()+s.slice(1))
+            .classList.remove('active')
+  );
+  const t = tab === 'login' ? 'Login' : tab === 'signup' ? 'Signup' : 'Pending';
+  document.getElementById('screen'+t).classList.add('active');
+}
+function showAuthScreen(which, name){
+  if (which === 'pending'){
+    showAuthTab('pending');
+    if (name) document.getElementById('pendingDesc').innerHTML =
+      `<strong>${name}</strong>님의 가입 신청이 완료되었습니다.<br>관리자가 확인 후 승인해 드립니다.`;
+  }
+}
+function showAppContent(name, store){
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('appHeader').style.display = '';
+  document.getElementById('appMain').style.display   = '';
+  // 헤더 사용자 칩 표시
+  const chip = document.getElementById('authUserChip');
+  const lo   = document.getElementById('btnLogout');
+  chip.textContent = store ? `${name} · ${store}` : name;
+  chip.style.display = '';
+  lo.style.display   = '';
+  initApp();
+}
+function authLogout(){
+  if (fbAuth) fbAuth.signOut().catch(()=>{});
+  location.reload();
+}
+
+/* ── 회원가입 ── */
+async function authSignup(){
+  const name  = (document.getElementById('signupName').value  || '').trim();
+  const store = (document.getElementById('signupStore').value || '').trim();
+  const email = (document.getElementById('signupEmail').value || '').trim();
+  const pw    =  document.getElementById('signupPw').value;
+  const msg   = document.getElementById('signupMsg');
+  if (!name || !email || !pw){ setAuthMsg('signupMsg','모든 항목을 입력해주세요','err'); return; }
+  if (pw.length < 6){ setAuthMsg('signupMsg','비밀번호는 6자 이상이어야 합니다','err'); return; }
+  setBtnLoading('signupBtn', true);
+  try {
+    const cred = await fbAuth.createUserWithEmailAndPassword(email, pw);
+    await fbDb.collection('users').doc(cred.user.uid).set({
+      name, store, email, status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showAuthScreen('pending', name);
+  } catch(e){ setAuthMsg('signupMsg', parseFirebaseErr(e), 'err'); }
+  finally { setBtnLoading('signupBtn', false); }
+}
+
+/* ── 로그인 ── */
+async function authLogin(){
+  const email = (document.getElementById('loginEmail').value || '').trim();
+  const pw    =  document.getElementById('loginPw').value;
+  if (!email || !pw){ setAuthMsg('loginMsg','이메일과 비밀번호를 입력해주세요','err'); return; }
+  setBtnLoading('loginBtn', true);
+  try {
+    await fbAuth.signInWithEmailAndPassword(email, pw);
+    // onAuthStateChanged 에서 처리
+  } catch(e){ setAuthMsg('loginMsg', parseFirebaseErr(e), 'err'); }
+  finally { setBtnLoading('loginBtn', false); }
+}
+
+/* ── 유틸 ── */
+function setAuthMsg(id, text, cls){
+  const el = document.getElementById(id);
+  el.textContent = text; el.className = 'auth-msg ' + (cls || '');
+}
+function setBtnLoading(id, on){
+  const b = document.getElementById(id);
+  b.disabled = on; b.textContent = on ? '처리 중...' : (id.includes('login') ? '로그인' : '가입 신청');
+}
+function parseFirebaseErr(e){
+  const c = e.code || '';
+  if (c.includes('email-already-in-use')) return '이미 가입된 이메일입니다';
+  if (c.includes('wrong-password') || c.includes('invalid-credential')) return '이메일 또는 비밀번호가 틀렸습니다';
+  if (c.includes('user-not-found'))  return '등록되지 않은 이메일입니다';
+  if (c.includes('weak-password'))   return '비밀번호는 6자 이상이어야 합니다';
+  if (c.includes('invalid-email'))   return '올바른 이메일 형식이 아닙니다';
+  if (c.includes('too-many-requests'))return '잠시 후 다시 시도해주세요';
+  return e.message || '오류가 발생했습니다';
+}
+
+/* ════════════════════════════════════
+   GEMINI 동적 모델 검색 (ListModels API)
+   v1 → v1beta 순으로 시도, 결과 캐시
+════════════════════════════════════ */
+let cachedModelList = null; // [{ id, version }, ...]
+
+/* 모델 조회 실패 시 사용할 폴백 목록 (2025~2026 기준 주요 모델) */
+const FALLBACK_MODELS = [
+  { id:'gemini-2.0-flash',           version:'v1beta' },
+  { id:'gemini-2.0-flash-lite',      version:'v1beta' },
+  { id:'gemini-2.5-flash-preview-04-17', version:'v1beta' },
+  { id:'gemini-1.5-flash',           version:'v1beta' },
+  { id:'gemini-1.5-flash-8b',        version:'v1beta' },
+  { id:'gemini-1.5-pro',             version:'v1beta' },
+  { id:'gemini-2.0-flash',           version:'v1'    },
+  { id:'gemini-1.5-flash',           version:'v1'    },
+];
+
+async function discoverModels(forceKey) {
+  const key = forceKey || apiKey;
+  if (!forceKey && cachedModelList) return cachedModelList;
+
+  for (const ver of ['v1', 'v1beta']) {
+    try {
+      const res = await apiFetch(
+        `https://generativelanguage.googleapis.com/${ver}/models?key=${key}`,
+        { method: 'GET' }
+      );
+      if (!res.ok) {
+        const e = await res.json().catch(()=>({}));
+        // 401/403은 키 문제 — 즉시 중단
+        if (res.status === 401 || res.status === 403)
+          throw new Error('API 키 오류 ' + res.status + ': ' + (e.error?.message || '권한 없음'));
+        continue;
+      }
+      const data = await res.json();
+      const list = (data.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => ({ id: m.name.replace('models/', ''), version: ver }))
+        .filter(m => m.id.toLowerCase().includes('gemini') && !m.id.includes('vision'));
+
+      if (list.length > 0) {
+        // flash 계열 우선 정렬
+        list.sort((a, b) => {
+          const rank = id =>
+            id.includes('2.0-flash') ? 0 :
+            id.includes('flash') ? 1 :
+            id.includes('pro')   ? 2 : 3;
+          return rank(a.id) - rank(b.id);
+        });
+        if (!forceKey) cachedModelList = list;
+        return list;
+      }
+    } catch(e) {
+      if (e.message.includes('API 키 오류')) throw e;
+      console.warn(`ListModels ${ver} 실패:`, e.message);
+    }
+  }
+  return null;
+}
+
+/* ════════════════════════════════════
+   CORS-SAFE FETCH WRAPPER
+   순서: ①직접 호출 → ②corsproxy.io → 오류
+════════════════════════════════════ */
+const CORS_PROXY = 'https://corsproxy.io/?url=';
+
+async function apiFetch(url, options, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const opts = { ...options, signal: controller.signal };
+
+  // ① 직접 호출 시도
+  try {
+    const res = await fetch(url, opts);
+    clearTimeout(timer);
+    return res;
+  } catch(e1) {
+    const msg = e1.message || '';
+    // AbortError 나 실제 네트워크 오류가 아니면 다시 던지기
+    if (msg.includes('abort') || msg.includes('AbortError')) throw e1;
+    console.warn('직접 호출 실패, CORS 프록시 시도:', msg);
+  }
+
+  // ② corsproxy.io 경유 시도
+  try {
+    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+    const controller2 = new AbortController();
+    const timer2 = setTimeout(() => controller2.abort(), timeoutMs);
+    const res = await fetch(proxyUrl, { ...options, signal: controller2.signal });
+    clearTimeout(timer2);
+    clearTimeout(timer);
+    console.log('CORS 프록시로 연결 성공');
+    return res;
+  } catch(e2) {
+    clearTimeout(timer);
+    throw new Error('API 연결 실패 (직접·프록시 모두 차단).\n\n💡 해결방법:\n① 「AI 없이 템플릿 생성」 체크 후 재시도\n② python3 -m http.server 8080 실행 후 localhost로 접속');
+  }
+}
+
+/* ════════════════════════════════════
+   DATA: 폰 모델 + 이미지 URL
+════════════════════════════════════ */
+const MODELS = {
+  samsung: [
+    { id:'s26ultra', name:'갤럭시 S26 울트라',
+      img:'https://images.samsung.com/kdp/goods/2026/01/30/b3a58f22-3a19-4c20-93d2-d84670e2e233.png' },
+    { id:'s26plus',  name:'갤럭시 S26+',
+      img:'https://images.samsung.com/kdp/goods/2026/01/29/8a048319-ef9d-4c1a-aa35-ce0e2b6d4c15.png' },
+    { id:'s26',      name:'갤럭시 S26',
+      img:'https://images.samsung.com/kdp/goods/2026/01/29/d67557b7-4d1e-4a91-9e0e-eb5ebacc0f71.png' },
+    { id:'ztri',     name:'갤럭시 Z 트라이폴드',
+      img:'https://images.samsung.com/kdp/goods/2025/11/27/29ff1188-ffba-4839-a37f-d4574481a023.png' },
+    { id:'zfold7',   name:'갤럭시 Z 폴드7',
+      img:'https://images.samsung.com/kdp/goods/2025/07/03/2af2533b-4309-431a-92b8-73d7513454a1.png' },
+    { id:'s25ultra', name:'갤럭시 S25 울트라',
+      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2501/gallery/sec-galaxy-s25-ultra-s938-sm-s938nzkakoo-thumb-544262517?$480_480_PNG$' },
+    { id:'s25plus',  name:'갤럭시 S25+',
+      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2501/gallery/sec-galaxy-s25-plus-s936-sm-s936nzbakoo-thumb-544258547?$480_480_PNG$' },
+    { id:'s25',      name:'갤럭시 S25',
+      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2501/gallery/sec-galaxy-s25-s931-sm-s931nzbakoo-thumb-544255117?$480_480_PNG$' },
+    { id:'s25fe',    name:'갤럭시 S25 FE',
+      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2506/gallery/sec-galaxy-s25fe-s731-sm-s731nbgakoo-thumb?$480_480_PNG$' },
+  ],
+  apple: [
+    { id:'i17promax', name:'iPhone 17 Pro Max',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17pro-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
+    { id:'i17pro',    name:'iPhone 17 Pro',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17pro-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
+    { id:'iair',      name:'iPhone Air',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17air-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
+    { id:'i17',       name:'iPhone 17',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
+    { id:'i17e',      name:'iPhone 17e',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17e-202603?wid=600&hei=600&fmt=png-alpha&.v=1' },
+    { id:'i16promax', name:'iPhone 16 Pro Max',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-16pro-202409?wid=600&hei=600&fmt=png-alpha&.v=1' },
+    { id:'i16pro',    name:'iPhone 16 Pro',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-16pro-202409?wid=600&hei=600&fmt=png-alpha&.v=1' },
+    { id:'i16',       name:'iPhone 16',
+      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-16plus-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
+  ]
+};
+
+/* ════════════════════════════════════
+   STATE
+════════════════════════════════════ */
+let apiKey      = localStorage.getItem('gemini_key') || '';
+let brand       = 'samsung';
+let targets     = [];
+let imgStyle    = 'dark';
+let customImg   = null;   // custom uploaded Image object
+let lastMms     = '';
+let isRunning   = false;
+let lastFormData = null;
+
+/* ════════════════════════════════════
+   INIT
+════════════════════════════════════ */
+/* ── 앱 초기화 (인증 완료 후 or Firebase 미설정 시 호출) ── */
+function initApp(){
+  buildModelList('samsung');
+  // Tag click
+  document.querySelectorAll('.tag').forEach(t =>
+    t.addEventListener('click', () => {
+      t.classList.toggle('active');
+      const v = t.dataset.v;
+      targets = targets.includes(v) ? targets.filter(x=>x!==v) : [...targets, v];
+    })
+  );
+  // file:// 프로토콜 감지
+  if (location.protocol === 'file:') {
+    document.getElementById('protoBanner').classList.add('show');
+  }
+  if (!apiKey) openSettings();
+}
+
+/* ════════════════════════════════════
+   UI HELPERS
+════════════════════════════════════ */
+function openSettings(){
+  document.getElementById('inputApiKey').value = apiKey;
+  document.getElementById('modalSettings').classList.add('show');
+}
+function closeSettings(){ document.getElementById('modalSettings').classList.remove('show'); }
+function saveSettings(){
+  const v = document.getElementById('inputApiKey').value.trim();
+  if (!v){ toast('API 키를 입력해주세요','error'); return; }
+  if (!v.startsWith('AIza')){ toast('API 키가 올바르지 않습니다. AIzaSy...로 시작해야 합니다','error'); return; }
+  apiKey = v;
+  localStorage.setItem('gemini_key', apiKey);
+  closeSettings();
+  toast('API 키가 저장되었습니다 ✓','success');
+}
+document.getElementById('btnSettings').onclick = openSettings;
+
+async function testApiKey(){
+  const k = document.getElementById('inputApiKey').value.trim();
+  const el = document.getElementById('apiTestResult');
+  if (!k){ el.style.color='#f87171'; el.textContent='❌ API 키를 입력해주세요'; return; }
+  el.style.color='#fbbf24'; el.textContent='🔄 사용 가능한 모델 조회 중...';
+  try {
+    let list = await discoverModels(k);
+    if (list && list.length > 0) {
+      const names = list.slice(0, 4).map(m => m.id).join(', ');
+      const extra = list.length > 4 ? ` 외 ${list.length - 4}개` : '';
+      const ver   = list[0].version;
+      el.style.color = '#4ade80';
+      el.textContent = `✅ 연결 성공 (API ${ver})! 사용 가능: ${names}${extra}`;
+      cachedModelList = null;
+    } else {
+      // 모델 목록 조회 실패 → 폴백 모델로 직접 ping 테스트
+      el.style.color='#fbbf24'; el.textContent='⚠️ 모델 목록 조회 실패 → 직접 연결 테스트 중...';
+      const testModel = FALLBACK_MODELS[0]; // gemini-2.0-flash
+      const res = await apiFetch(
+        `https://generativelanguage.googleapis.com/${testModel.version}/models/${testModel.id}:generateContent?key=${k}`,
+        { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ contents:[{ parts:[{ text:'ping' }] }] }) }
+      );
+      if (res.ok || res.status === 400) {
+        // 400은 내용 문제지만 API 키는 유효
+        el.style.color = '#4ade80';
+        el.textContent = `✅ API 키 유효! (모델 목록 조회는 제한됨, 생성은 정상 작동)`;
+      } else if (res.status === 401 || res.status === 403) {
+        el.style.color = '#f87171';
+        el.textContent = '❌ API 키 인증 실패 (401/403) — AI Studio에서 키를 다시 발급받으세요';
+      } else {
+        el.style.color = '#fbbf24';
+        el.textContent = `⚠️ 응답 코드 ${res.status} — 키는 입력됐으나 상태 불명확. 생성을 시도해보세요.`;
+      }
+    }
+  } catch(e) {
+    el.style.color = '#f87171';
+    const msg = e.message || '';
+    if (msg.includes('직접·프록시') || msg.toLowerCase().includes('fetch')){
+      el.textContent = '❌ 네트워크 연결 오류 — 인터넷 확인 또는 서버시작.bat 실행 후 재시도';
+    } else if (msg.includes('401') || msg.includes('403') || msg.includes('API 키 오류')) {
+      el.textContent = '❌ API 키 오류 — AI Studio에서 키를 확인하세요';
+    } else {
+      el.textContent = '❌ ' + msg.slice(0, 120);
+    }
+  }
+}
+
+function setBrand(btn){
+  document.querySelectorAll('.toggle').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  brand = btn.dataset.brand;
+  buildModelList(brand);
+}
+
+function buildModelList(b){
+  const sel = document.getElementById('selModel');
+  sel.innerHTML = '<option value="">모델을 선택하세요</option>';
+  MODELS[b].forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id; o.textContent = m.name;
+    sel.appendChild(o);
+  });
+  document.getElementById('modelThumb').innerHTML = '<span class="thumb-empty">모델을 선택하면 이미지가 표시됩니다</span>';
+}
+
+function onModelChange(){
+  const id = document.getElementById('selModel').value;
+  const m = MODELS[brand].find(x=>x.id===id);
+  const thumb = document.getElementById('modelThumb');
+  if (m){
+    thumb.innerHTML = `<img src="${m.img}" alt="${m.name}" crossorigin="anonymous"
+      onerror="this.parentElement.innerHTML='<span class=thumb-empty>이미지 로드 실패 — 직접 업로드 사용</span>'">`;
+  } else {
+    thumb.innerHTML = '<span class="thumb-empty">모델을 선택하면 이미지가 표시됩니다</span>';
+  }
+}
+
+function onCustomImg(input){
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('customThumbPreview');
+    prev.src = e.target.result;
+    prev.style.display = 'block';
+    const img = new Image();
+    img.onload = () => { customImg = img; };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function setStyle(btn){
+  document.querySelectorAll('.style-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  imgStyle = btn.dataset.style;
+}
+
+function setLoading(on, step=''){
+  const ov = document.getElementById('loadingOverlay');
+  if(on){ ov.classList.add('show'); document.getElementById('loadingStep').textContent = step; }
+  else  { ov.classList.remove('show'); }
+  document.getElementById('btnGen').disabled = on;
+}
+
+function showErrPanel(htmlMsg){
+  const p = document.getElementById('errPanel');
+  document.getElementById('errPanelMsg').innerHTML = htmlMsg;
+  p.style.display = 'block';
+}
+
+function toast(msg, type=''){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(() => el.className='toast', 2800);
+}
+
+/* ════════════════════════════════════
+   COLLECT FORM DATA
+════════════════════════════════════ */
+function getForm(){
+  const modelId = document.getElementById('selModel').value;
+  if (!modelId){ toast('모델을 선택해주세요','error'); return null; }
+  const model   = MODELS[brand].find(m=>m.id===modelId);
+
+  const orig    = document.getElementById('inpOrig').value.trim();
+  const disc    = document.getElementById('inpDisc').value.trim();
+  if (!orig || !disc){ toast('가격 정보를 입력해주세요','error'); return null; }
+
+  const saving  = document.getElementById('inpSaving').value.trim();
+  const sDate   = document.getElementById('inpStart').value;
+  const eDate   = document.getElementById('inpEnd').value;
+  const benefit = document.getElementById('inpBenefit').value.trim();
+
+  const period = sDate && eDate
+    ? `${fmtDate(sDate)} ~ ${fmtDate(eDate)}`
+    : '';
+
+  return { brand, model, orig, disc, saving, period, targets:[...targets], benefit, style:imgStyle };
+}
+
+function fmtDate(s){
+  const d = new Date(s);
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+/* ════════════════════════════════════
+   MAIN GENERATE FLOW
+════════════════════════════════════ */
+async function startGenerate(){
+  if (isRunning) return;
+  const templateMode = document.getElementById('chkTemplate').checked;
+  if (!templateMode && !apiKey){ openSettings(); return; }
+
+  const fd = getForm();
+  if (!fd) return;
+  lastFormData = fd;
+
+  isRunning = true;
+  document.getElementById('emptyState')?.remove();
+  document.getElementById('mmsBox').classList.remove('show');
+  document.getElementById('actionRow').classList.remove('show');
+
+  try {
+    let mmsText = '';
+
+    if (templateMode) {
+      // ── 템플릿 모드: AI 없이 즉시 생성 ──
+      setLoading(true, '🖼️ 템플릿으로 이미지 생성 중...');
+      mmsText = buildTemplateMms(fd);
+    } else {
+      // ── AI 모드 ──
+      setLoading(true, '📝 MMS 문구 생성 중 (Gemini)...');
+      mmsText = await genMmsText(fd);
+    }
+    lastMms = mmsText;
+
+    // 배경 이미지 (AI 모드만, 실패 시 자동 Canvas 폴백)
+    let bgB64 = null;
+    if (!templateMode) {
+      setLoading(true, '🎨 배경 이미지 생성 중 (Imagen 3)...');
+      try {
+        bgB64 = await genBackground(fd);
+        setLoading(true, '✅ Imagen 3 배경 생성 완료');
+      } catch(e){
+        const msg = e.message || '';
+        if (msg.includes('403') || msg.includes('permission') || msg.includes('billing')){
+          toast('Imagen 3: 유료 플랜 필요 → Canvas 배경으로 자동 전환됩니다','');
+        } else if (msg.includes('404') || msg.includes('not found')){
+          toast('Imagen 3 미지원 API 키 → Canvas 배경으로 자동 전환됩니다','');
+        } else {
+          toast('Imagen 생성 실패 → Canvas 배경 사용: ' + msg.slice(0,60),'');
+        }
+        console.warn('Imagen 실패:', msg);
+      }
+    }
+
+    // 제품 이미지 로드
+    setLoading(true, '📱 제품 이미지 로드 중...');
+    const phoneImg = customImg || await loadPhoneImg(fd.model.img);
+
+    // Canvas 합성
+    setLoading(true, '✨ 이미지 합성 중...');
+    await document.fonts.ready;
+    await composeCanvas(bgB64, phoneImg, fd, mmsText);
+
+    // 결과 표시
+    showMms(mmsText);
+    document.getElementById('actionRow').classList.add('show');
+    const modeLabel = templateMode ? '템플릿 모드' : 'AI 모드';
+    toast(`MMS 생성 완료! (${modeLabel}) ✓`, 'success');
+
+  } catch(e){
+    console.error('생성 오류:', e);
+    const msg = e.message || String(e);
+    let guide = '';
+    if (msg.includes('직접·프록시') || msg.toLowerCase().includes('fetch')){
+      guide = '<br><br>💡 <strong>해결방법 (3가지 중 하나)</strong><br>'
+        + '① 아래 <strong>「AI 없이 템플릿 생성」</strong> 체크 후 재시도 (즉시 가능)<br>'
+        + '② 윈도우: <code>서버시작.bat</code> 실행 후 브라우저로 접속<br>'
+        + '③ API 설정에서 <strong>연결 테스트</strong> 클릭하여 키 확인';
+    } else if (msg.includes('401') || msg.includes('API key') || msg.includes('키 오류')){
+      guide = '<br><br>💡 <strong>해결:</strong> ⚙️ API 설정에서 API 키를 다시 입력하고 「연결 테스트」를 눌러주세요';
+    } else if (msg.includes('quota') || msg.includes('429')){
+      guide = '<br><br>💡 <strong>해결:</strong> Gemini 무료 한도 초과 — 1분 후 다시 시도하거나 내일 재사용하세요';
+    }
+    showErrPanel('❌ 오류: ' + msg.replace(/\n/g,'<br>').slice(0,200) + guide);
+  } finally {
+    isRunning = false;
+    setLoading(false);
+  }
+}
+
+/* 템플릿 모드: Gemini 없이 MMS 문구 자동 생성 (실제 발송 샘플 스타일 적용) */
+function buildTemplateMms(fd){
+  const tgt = fd.targets.length ? fd.targets[0] : '';
+
+  // 타겟별 제목 매핑
+  const titleMap = {
+    '단골 고객 전용': '단골 고객 전용 특가 혜택',
+    '타사 단골 전용': '타사 고객 전환 특가 혜택',
+    '기기변경': '기기변경 특가 혜택 안내',
+    '번호이동': '번호이동 파격 특가 오픈',
+  };
+  const title = tgt ? (titleMap[tgt] || tgt + ' 특가 혜택') : '특가 혜택 안내';
+
+  // 타겟별 오프닝 문구
+  const openMap = {
+    '단골 고객 전용': '휴대폰 오래 쓰셨다면 지금이 교체 타이밍입니다.',
+    '타사 단골 전용': '지금 이동하시면 파격 혜택을 드립니다.',
+    '기기변경': '기기변경 고객님을 위한 단독 특가입니다.',
+    '번호이동': '번호이동 파격 최저가 오늘만 한정 운영!',
+  };
+  const opening = tgt ? (openMap[tgt] || '한정 특가 혜택을 안내드립니다.') : '한정 특가 혜택을 안내드립니다.';
+
+  const saving  = fd.saving  ? `\n   (${fd.saving} 절약)` : '';
+  const period  = fd.period  ? `\n※ 행사기간 : ${fd.period}` : '';
+  const benefit = fd.benefit ? `\n★ ${fd.benefit}` : '';
+
+  return `[ ${title} ]
+
+${opening}
+
+■ ${fd.model.name}
+ - 출고가 : ${fd.orig}
+ - 구매가 : ${fd.disc}${saving}
+${fd.benefit ? ' - ' + fd.benefit : ''}
+${period}
+※ 준비된 수량 소진 시 조기 종료${benefit}
+
+매장 방문 또는 전화 문의 주시면 친절히 안내드립니다.`.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* ════════════════════════════════════
+   GEMINI: TEXT (모델 폴백 체인)
+════════════════════════════════════ */
+async function genMmsText(fd){
+  const tStr = fd.targets.length ? fd.targets[0] : '';
+
+  // 타겟별 톤 가이드
+  const toneMap = {
+    '단골 고객 전용': '장기 이용 고객 감사 톤 — "오래 쓰셨다면", "단골 고객님께" 등 감성적 접근, 신뢰 기반 혜택 강조',
+    '타사 단골 전용': '타사 고객 유치 톤 — 이동 메리트와 파격 가격 직접 강조, "지금 오시면" 등 유인',
+    '기기변경': '기기변경 고객 톤 — 단순·명확한 가격 혜택 중심, 조건 간결하게',
+    '번호이동': '번호이동 긴급 톤 — "선착순", "오늘만", "긴급 오픈" 등 희소성·긴급성 극대화',
+  };
+  const toneGuide = tStr && toneMap[tStr] ? toneMap[tStr] : '일반 고객 대상 — 혜택 명확, 가격 중심';
+
+  const prompt = `당신은 한국 이동통신 대리점 MMS 마케팅 전문가입니다.
+아래 실제 발송 샘플을 참고해 동일한 스타일로 MMS 문구를 작성하세요.
+
+[실제 발송 샘플 — 이 스타일을 따르세요]
+---
+[ 번호이동 특가 혜택 긴급 오픈 ]
+
+지금 파격 최저가 오늘만 한정!
+
+① 갤럭시S25 FE  94만원 → 할부0원
+② 아이폰17  128만원 → 34만원
+
+오늘만 한정수량 조기마감 예상됩니다.
+지금 바로 전화 예약으로 혜택을 확보하세요.
+---
+[ 최저가 갤럭시 교체 혜택 ]
+
+휴대폰 3년 이상 쓰셨다면 지금이 최저가 교체 타이밍입니다.
+
+■ 갤럭시 S25 FE
+ - 출고가 : 95만원
+ - 구매가 : 9만원 (86만원 할인)
+   *공시지원금 기준
+
+기회 놓치지 마세요!
+---
+[ 명절 교체 혜택 안내 ]
+
+SKT 장기사용 고객님께 드리는 안내입니다
+
+갤럭시 S25 FE
+▶ 19만원 구매 가능
+▶ 공시지원금 기준
+
+휴대폰 오래 쓰셨다면 이번이 교체 기회입니다
+
+※ 행사기간 : 2/13 ~ 2/18
+※ 준비된 수량 소진 시 종료
+
+매장 방문하셔서 체험해보세요
+---
+
+[이번 행사 정보]
+- 기기: ${fd.model.name}
+- 출고가: ${fd.orig}
+- 구매가: ${fd.disc}
+${fd.saving ? `- 할인폭: ${fd.saving}` : ''}
+${fd.period ? `- 행사 기간: ${fd.period}` : ''}
+${tStr ? `- 대상: ${tStr}` : ''}
+${fd.benefit ? `- 추가 혜택: ${fd.benefit}` : ''}
+
+[작성 규칙 — 반드시 준수]
+1. 150자 이내 (짧고 임팩트 있게)
+2. 제목은 대괄호 [ ] 안에 핵심 키워드 (예: [ 번호이동 특가 긴급 오픈 ])
+3. 타겟 톤: ${toneGuide}
+4. 가격 표현: "출고가 → 구매가 (할인폭)" 형식 유지
+5. 허용 기호: ★ ▶ ■ ※ ①②③ 만 사용
+   - 이모지(예: 🔥📱💰) 절대 사용 금지
+   - 특수 유니코드 기호(예: ◆◇▲△) 사용 금지
+6. 조건·기간은 ※ 로 후미 처리
+7. 마지막 줄: 내방 또는 전화 예약 유도 CTA
+8. 자연스러운 한국어, 경어 사용
+
+문자 메시지 본문만 출력하고 설명·부연은 하지 마세요.`;
+
+  // 사용 가능한 모델 목록을 동적으로 조회
+  setLoading(true, '🔍 사용 가능한 Gemini 모델 조회 중...');
+  let modelList = await discoverModels();
+  if (!modelList || modelList.length === 0) {
+    // 모델 목록 조회 실패(CORS·네트워크) → 폴백 모델로 자동 시도
+    console.warn('ListModels 조회 실패 → 폴백 모델 목록으로 시도');
+    setLoading(true, '⚠️ 모델 조회 실패 → 기본 모델로 재시도 중...');
+    modelList = FALLBACK_MODELS;
+  }
+
+  let lastErr = null;
+  for (const { id, version } of modelList) {
+    try {
+      setLoading(true, `📝 MMS 문구 생성 중 (${id})...`);
+      const res = await apiFetch(
+        `https://generativelanguage.googleapis.com/${version}/models/${id}:generateContent?key=${apiKey}`,
+        { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ contents:[{ parts:[{ text:prompt }] }] }) }
+      );
+      if (res.status === 404){ lastErr = new Error(`모델 없음: ${id}`); continue; }
+      if (!res.ok){
+        const e = await res.json().catch(()=>({}));
+        const msg = e.error?.message || `HTTP ${res.status}`;
+        if (res.status===401 || res.status===403){ throw new Error('API 키 오류: ' + msg); }
+        lastErr = new Error(msg); continue;
+      }
+      const data = await res.json();
+      console.log('✅ 사용 모델:', id, '(', version, ')');
+      return data.candidates[0].content.parts[0].text.trim();
+    } catch(e) {
+      if (e.message && (e.message.includes('직접·프록시') || e.message.includes('API 키 오류'))){ throw e; }
+      lastErr = e;
+    }
+  }
+  const errMsg = lastErr?.message || '알 수 없는 오류';
+  if (errMsg.includes('직접·프록시') || errMsg.toLowerCase().includes('fetch')){
+    throw new Error('API 연결 실패 (직접·프록시 모두 차단).\n\n💡 해결방법:\n① 아래 「AI 없이 템플릿 생성」 체크 후 재시도 (즉시 가능)\n② 서버시작.bat 실행 후 localhost:8080으로 접속');
+  }
+  throw new Error('모든 Gemini 모델 시도 실패: ' + errMsg.slice(0, 100));
+}
+
+/* ════════════════════════════════════
+   GEMINI: IMAGEN 3 BACKGROUND
+════════════════════════════════════ */
+async function genBackground(fd){
+  const stylePrompts = {
+    dark:    'dark navy blue background (#0a1628), bright lime yellow geometric accent lines and diagonal stripes, abstract technology circuit patterns, high contrast K-style advertisement',
+    bright:  'clean white and light blue background, modern minimalist design, subtle gradient, professional tech advertisement with blue accents',
+    premium: 'deep black and gold premium background, luxury mobile phone advertisement, elegant geometric patterns, metallic gold accent lines'
+  };
+
+  const prompt = `Professional South Korean mobile phone promotional advertisement background,
+${stylePrompts[fd.style]},
+no text, no phone devices, no people,
+square 1:1 format, suitable for overlay composition,
+${fd.brand==='samsung' ? 'Samsung Galaxy' : 'Apple iPhone'} promotional aesthetic`;
+
+  // Imagen은 v1beta에서만 지원
+  const res = await apiFetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+    { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        instances:[{ prompt }],
+        parameters:{ sampleCount:1, aspectRatio:'1:1', safetySetting:'BLOCK_ONLY_HIGH', personGeneration:'dont_allow' }
+      })
+    }
+  );
+  if (!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`Imagen HTTP ${res.status}`); }
+  const data = await res.json();
+  if (!data.predictions?.[0]) throw new Error('Imagen 응답 없음');
+  return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+}
+
+/* ════════════════════════════════════
+   PHONE IMAGE LOADER (CORS safe)
+════════════════════════════════════ */
+async function loadPhoneImg(url){
+  // 1. Direct with CORS
+  try { return await imgLoad(url, true); } catch {}
+  // 2. corsproxy.io fallback
+  try { return await imgLoad(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, true); } catch {}
+  // 3. No CORS (canvas will be tainted — download disabled)
+  try { return await imgLoad(url, false); } catch {}
+  return null;
+}
+
+function imgLoad(src, cors=true){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    if (cors) img.crossOrigin = 'anonymous';
+    img.onload  = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+    setTimeout(()=>reject(new Error('timeout')), 9000);
+  });
+}
+
+/* ════════════════════════════════════
+   CANVAS COMPOSITION  1000×1000
+   ── 전문 가격 중심 프로모션 디자인 v3 ──
+════════════════════════════════════ */
+async function composeCanvas(bgB64, phoneImg, fd, mmsText){
+  const canvas = document.getElementById('previewCanvas');
+  const ctx    = canvas.getContext('2d');
+  canvas.width = canvas.height = 1000;
+
+  const AC    = ACCENT(fd.style);
+  const isDark = fd.style !== 'bright';
+  const TC    = isDark ? '#ffffff'                    : '#0a1628';
+  const TC2   = isDark ? 'rgba(255,255,255,0.62)'    : 'rgba(10,22,40,0.58)';
+  const TC3   = isDark ? 'rgba(255,255,255,0.32)'    : 'rgba(10,22,40,0.32)';
+
+  /* ── 1. 배경 ── */
+  if(bgB64){
+    const bg = await imgLoad(bgB64, false);
+    ctx.drawImage(bg, 0, 0, 1000, 1000);
+    const ov = ctx.createLinearGradient(0,0,1000,0);
+    if(isDark){
+      ov.addColorStop(0,    'rgba(6,14,30,0.95)');
+      ov.addColorStop(0.46, 'rgba(6,14,30,0.80)');
+      ov.addColorStop(0.68, 'rgba(6,14,30,0.22)');
+      ov.addColorStop(1,    'rgba(6,14,30,0.02)');
+    } else {
+      ov.addColorStop(0,    'rgba(245,250,255,0.96)');
+      ov.addColorStop(0.46, 'rgba(245,250,255,0.78)');
+      ov.addColorStop(0.68, 'rgba(245,250,255,0.20)');
+      ov.addColorStop(1,    'rgba(245,250,255,0.02)');
+    }
+    ctx.fillStyle = ov; ctx.fillRect(0,0,1000,1000);
+  } else {
+    drawFallbackBg(ctx, fd.style);
+  }
+
+  /* ── 2. 폰 이미지 — 원본 비율 보존, 존 내 완전 맞춤 ── */
+  // 폰 존: 1.2배 확대 — Y를 -50부터 시작해 상하 살짝 클리핑 허용, 텍스트 우측으로 안전 확보
+  const PZONE_X=450, PZONE_Y=-50, PZONE_W=550, PZONE_H=1100;
+
+  if(phoneImg){
+    // ① 원본 비율 계산 (naturalWidth 우선, 없으면 width fallback)
+    const natW = phoneImg.naturalWidth  || phoneImg.width  || 1;
+    const natH = phoneImg.naturalHeight || phoneImg.height || 1;
+    const aspect = natW / natH;
+
+    // ② 존 안에 꽉 차되 비율 유지 (contain 방식)
+    let dW, dH;
+    if(aspect >= PZONE_W / PZONE_H){
+      dW = PZONE_W; dH = Math.round(PZONE_W / aspect);
+    } else {
+      dH = PZONE_H; dW = Math.round(PZONE_H * aspect);
+    }
+    const dX = PZONE_X + Math.round((PZONE_W - dW) / 2);
+    const dY = PZONE_Y + Math.round((PZONE_H - dH) / 2);
+
+    // ③ 헤일로 글로우
+    const hCX = dX + dW*0.5, hCY = dY + dH*0.42;
+    const halo = ctx.createRadialGradient(hCX,hCY,16, hCX,hCY,Math.max(dW,dH)*0.58);
+    halo.addColorStop(0, `${AC}28`); halo.addColorStop(0.5,`${AC}0E`); halo.addColorStop(1,'transparent');
+    ctx.fillStyle=halo; ctx.fillRect(dX-80,dY-80,dW+160,dH+160);
+
+    // ④ 폰 이미지 (비율 보존)
+    ctx.drawImage(phoneImg, dX, dY, dW, dH);
+
+    // ⑤ 바닥 타원 그림자
+    const shCY = dY + dH + 10;
+    const sh = ctx.createRadialGradient(dX+dW/2,shCY,3, dX+dW/2,shCY,dW*0.42);
+    sh.addColorStop(0,'rgba(0,0,0,0.38)'); sh.addColorStop(1,'transparent');
+    ctx.fillStyle=sh;
+    ctx.beginPath(); ctx.ellipse(dX+dW/2, shCY, dW*0.40, 16, 0,0,Math.PI*2); ctx.fill();
+  }
+
+  /* ── 3. 텍스트 콘텐츠 (좌측) ── */
+  ctx.textBaseline = 'top';
+  const LX=52, LW=420;  // 텍스트 컬럼 너비 420px
+
+  // ── 수직 레이아웃: 전체 895px을 요소별로 분배 ──
+  // 고정 y 기반 배치 (영역을 꽉 채우도록 간격 설계)
+  let y = 52;
+
+  // ① 이벤트 헤드 배지 — 라운드 컨테이너 안에 크게 (타겟+행사 통합, 중복 제거)
+  const evtHeadMap = {
+    '단골 고객 전용': '단골 고객 전용 특가 행사',
+    '타사 단골 전용': '타사 단골 전용 특가 행사',
+    '기기변경': '기기변경 전용 특가 행사',
+    '번호이동': '번호이동 특가 행사',
+  };
+  const evtHead = fd.targets.length > 0
+    ? (evtHeadMap[fd.targets[0]] || fd.targets[0] + ' 특가 행사')
+    : '한정 특가 행사';
+  // 폰트 자동 조절 (최대 24px, 텍스트 너비 LW-50 이하로)
+  let evtSz = 24;
+  ctx.font = `700 ${evtSz}px "Noto Sans KR"`;
+  while(ctx.measureText(evtHead).width > LW - 52 && evtSz > 16){ evtSz--; ctx.font=`700 ${evtSz}px "Noto Sans KR"`; }
+  const evtTxtW = ctx.measureText(evtHead).width;
+  const evtPadX = 26, evtPadY = 16;
+  const evtW = evtTxtW + evtPadX * 2;
+  const evtH = evtSz + evtPadY * 2;
+  const evtR = evtH / 2;  // 완전 라운드 pill
+  // 배지 배경 + 테두리
+  ctx.fillStyle = `${AC}22`; roundRect(ctx, LX, y, evtW, evtH, evtR); ctx.fill();
+  ctx.strokeStyle = AC; ctx.lineWidth = 2; roundRect(ctx, LX, y, evtW, evtH, evtR); ctx.stroke();
+  // 배지 텍스트
+  ctx.fillStyle = AC;
+  ctx.font = `700 ${evtSz}px "Noto Sans KR"`;
+  ctx.fillText(evtHead, LX + evtPadX, y + evtPadY);
+  y += evtH + 44;
+
+  // ③ 모델명 — 한 줄 우선, 폰트 자동 축소 (최대 80px)
+  ctx.fillStyle = TC;
+  let nameSz = 80;
+  ctx.font = `900 ${nameSz}px "Noto Sans KR"`;
+  while(ctx.measureText(fd.model.name).width > LW && nameSz > 40){
+    nameSz -= 3;
+    ctx.font = `900 ${nameSz}px "Noto Sans KR"`;
+  }
+  const nameLines = splitLines(ctx, fd.model.name, LW);
+  for(const ln of nameLines){ ctx.fillText(ln, LX, y); y += nameSz + 10; }
+  y += 22;
+
+  // ④ 구분선
+  ctx.fillStyle = AC; ctx.fillRect(LX, y, 56, 5);
+  ctx.fillStyle = isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.10)';
+  ctx.fillRect(LX+64, y, LW-64, 5);
+  y += 58;
+
+  /* ─────── 가격 3단 계층 (출고가→구매가→할인) ─────── */
+
+  // ⑤-A 출고가 (취소선) — 구매가 대비는 주되 명확하게 표시
+  if(fd.orig){
+    // 출고가 배경 pill (더 잘 보이도록)
+    const origColor = isDark ? 'rgba(255,255,255,0.68)' : 'rgba(10,22,40,0.60)';
+    ctx.fillStyle = origColor;
+    ctx.font = `500 26px "Noto Sans KR"`;
+    const origStr = '출고가  ' + fd.orig;
+    const ow = ctx.measureText(origStr).width;
+    ctx.fillText(origStr, LX, y);
+    // 취소선 — 텍스트 중앙을 가로지르도록 (26px 폰트 기준 약 13px)
+    ctx.strokeStyle = isDark ? 'rgba(255,80,80,0.85)' : 'rgba(180,30,30,0.75)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(LX, y+13); ctx.lineTo(LX+ow, y+13); ctx.stroke();
+    y += 60;
+  }
+
+  // ⑤-B 구매가 라벨 — accent 색 pill 태그 (깔끔한 가격 레이블)
+  const gLabel = '구매가';
+  ctx.font = `700 20px "Noto Sans KR"`;
+  const glW = ctx.measureText(gLabel).width + 32;
+  ctx.fillStyle = AC;
+  roundRect(ctx, LX, y, glW, 36, 18); ctx.fill();
+  ctx.fillStyle = isDark ? '#0a1628' : '#ffffff';
+  ctx.fillText(gLabel, LX+16, y+8);
+  y += 50;
+
+  // ⑤-C 구매가 (초대형 — 가장 강조)
+  ctx.fillStyle = AC;
+  ctx.font = `900 136px "Noto Sans KR"`;
+  ctx.fillText(fd.disc, LX, y);
+  y += 158;
+
+  // ⑤-D 할인액 배지 — 강렬한 빨간 태그 (할인 강조)
+  if(fd.saving){
+    const stxt = fd.saving + ' 할인';
+    ctx.font = `900 28px "Noto Sans KR"`;
+    const sw = Math.min(ctx.measureText(stxt).width + 52, LW);
+    // 빨간 pill 배경
+    ctx.fillStyle = '#E53935';
+    roundRect(ctx, LX, y, sw, 60, 10); ctx.fill();
+    // 흰색 텍스트
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(stxt, LX+26, y+16);
+    y += 84;
+  }
+
+  /* ─────────────────────────────────────── */
+  // ⑥ 하단 콘텐츠 — 여백 채우기 (행사기간은 CTA 바에만 표시)
+  y = Math.max(y + 12, 720);  // 최소 y=720에서 시작
+
+  // 구분선
+  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
+  ctx.fillRect(LX, y, LW, 1.5);
+  y += 22;
+
+  // 추가 혜택 또는 기본 포인트 — 선명하게 (TC 전체 불투명 + 굵게)
+  if(fd.benefit){
+    ctx.fillStyle = TC;
+    ctx.font = `600 23px "Noto Sans KR"`;
+    const blines = splitLines(ctx, '✔  ' + fd.benefit, LW);
+    for(const ln of blines){ ctx.fillText(ln, LX, y); y += 38; }
+  } else {
+    ctx.fillStyle = TC;
+    ctx.font = `600 22px "Noto Sans KR"`;
+    ctx.fillText('✔ 빠른 당일 개통   ✔ 재고 최대 확보', LX, y);
+  }
+
+  /* ── 4. CTA 하단 풀와이드 바 (행사기간 중심) ── */
+  ctx.fillStyle = AC;
+  ctx.fillRect(0, 895, 1000, 105);
+  ctx.textBaseline = 'middle';
+
+  // CTA: 왼쪽 = 행사기간, 오른쪽 = 지금 바로 상담하세요! (군더더기 없이 2요소만)
+  if(fd.period){
+    // 왼쪽: 행사기간 라벨 (진하게)
+    ctx.fillStyle = 'rgba(10,22,40,0.80)';
+    ctx.font = `700 17px "Noto Sans KR"`;
+    ctx.fillText('행사기간', LX, 916);
+    // 날짜 — 더 크고 선명하게
+    ctx.fillStyle = '#0a1628';
+    ctx.font = `900 36px "Noto Sans KR"`;
+    ctx.fillText(fd.period, LX, 952);
+    // 오른쪽: 상담 CTA
+    ctx.fillStyle = '#0a1628';
+    ctx.font = `900 27px "Noto Sans KR"`;
+    ctx.textAlign = 'right';
+    ctx.fillText('지금 바로 상담하세요!', 960, 944);
+    ctx.textAlign = 'left';
+  } else {
+    // 행사기간 없으면 CTA만 중앙에
+    ctx.fillStyle = '#0a1628';
+    ctx.font = `900 30px "Noto Sans KR"`;
+    ctx.fillText('지금 바로 상담하세요!', LX, 947);
+  }
+
+  // 하단 캡션
+  ctx.fillStyle = 'rgba(10,22,40,0.40)';
+  ctx.font = `400 12px "Noto Sans KR"`;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('※ 이미지는 실물과 다를 수 있으며 행사 기간 및 조건에 따라 혜택이 변동될 수 있습니다.', LX, 990);
+}
+
+function ACCENT(style){
+  if(style==='premium') return '#D4AF37';
+  if(style==='bright')  return '#2563EB';
+  return '#FFE500';
+}
+
+function drawFallbackBg(ctx, style){
+  // 기본 그라디언트 (사선 방향으로 깊이감)
+  const g = ctx.createLinearGradient(0, 0, 650, 1000);
+  if(style==='bright'){
+    g.addColorStop(0,'#f0f7ff'); g.addColorStop(0.6,'#e6f1fc'); g.addColorStop(1,'#dce8f8');
+  } else if(style==='premium'){
+    g.addColorStop(0,'#080808'); g.addColorStop(0.5,'#110f1f'); g.addColorStop(1,'#0d0d1e');
+  } else {
+    g.addColorStop(0,'#050d1e'); g.addColorStop(0.45,'#091526'); g.addColorStop(1,'#071020');
+  }
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,1000,1000);
+
+  const AC = ACCENT(style);
+
+  // 우측 폰 영역 방사형 글로우 (제품 존 강조)
+  const rg = ctx.createRadialGradient(760,435,35, 760,435,370);
+  rg.addColorStop(0,`${AC}1C`);
+  rg.addColorStop(0.55,`${AC}0A`);
+  rg.addColorStop(1,'transparent');
+  ctx.fillStyle = rg;
+  ctx.fillRect(0,0,1000,1000);
+
+  // 좌하단 서브 앰비언트
+  const lg = ctx.createRadialGradient(90,910,5, 90,910,185);
+  lg.addColorStop(0,`${AC}12`); lg.addColorStop(1,'transparent');
+  ctx.fillStyle = lg;
+  ctx.fillRect(0,0,1000,1000);
+
+  // 대각선 텍스처 라인 (미세)
+  const lc = style==='bright' ? 'rgba(37,99,235,0.04)' : 'rgba(255,255,255,0.04)';
+  ctx.strokeStyle = lc; ctx.lineWidth = 1;
+  for(let i=-600; i<1600; i+=130){
+    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i+480,1000); ctx.stroke();
+  }
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}
+
+/* 한국어 포함 텍스트 줄바꿈
+   ① 띄어쓰기(단어) 기준 우선 → ② 단어가 너무 길면 글자 단위 fallback */
+function splitLines(ctx, text, maxW){
+  const words = text.split(' ');
+  if(words.length > 1){
+    const lines = []; let cur = '';
+    for(const word of words){
+      const test = cur ? cur + ' ' + word : word;
+      if(ctx.measureText(test).width > maxW && cur !== ''){
+        lines.push(cur); cur = word;
+      } else { cur = test; }
+    }
+    if(cur) lines.push(cur);
+    return lines;
+  }
+  // 띄어쓰기 없는 텍스트 → 글자 단위 fallback
+  const lines = []; let cur = '';
+  for(const ch of text){
+    const t = cur + ch;
+    if(ctx.measureText(t).width > maxW && cur !== ''){
+      lines.push(cur); cur = ch;
+    } else { cur = t; }
+  }
+  if(cur) lines.push(cur);
+  return lines;
+}
+
+/* 원래가 → 할인가 할인율(%) 자동 계산 */
+function calcDiscPct(orig, disc){
+  const parse = s => {
+    const man = /만/.test(s) ? 10000 : 1;
+    const n = parseFloat(s.replace(/[^0-9.]/g,''));
+    return isNaN(n) ? 0 : n * man;
+  };
+  const o = parse(orig), d = parse(disc);
+  return (o > 0 && d > 0 && d < o) ? Math.round((o-d)/o*100) : 0;
+}
+
+function wrapText(ctx,text,x,y,maxW,lh){
+  const lines = splitLines(ctx,text,maxW);
+  lines.forEach((ln,i)=>ctx.fillText(ln,x,y+i*lh));
+}
+
+/* ════════════════════════════════════
+   SHOW MMS TEXT
+════════════════════════════════════ */
+function showMms(text){
+  document.getElementById('mmsText').textContent = text;
+  const len = text.length;
+  document.getElementById('charCount').textContent = `${len}자`;
+  document.getElementById('mmsBox').classList.add('show');
+}
+
+/* ════════════════════════════════════
+   COPY
+════════════════════════════════════ */
+function copyMms(){
+  navigator.clipboard.writeText(lastMms).then(()=>{
+    toast('문구가 클립보드에 복사되었습니다 ✓','success');
+  }).catch(()=>toast('복사 실패. 직접 드래그하여 복사해주세요','error'));
+}
+
+/* ════════════════════════════════════
+   DOWNLOAD JPG (1000×1000, <250KB)
+════════════════════════════════════ */
+function downloadJpg(){
+  const canvas = document.getElementById('previewCanvas');
+  let q = 0.90;
+  let url;
+  // 250KB 이하가 될 때까지 품질 감소
+  while(q >= 0.50){
+    url = canvas.toDataURL('image/jpeg', q);
+    const kb = Math.round((url.length - 'data:image/jpeg;base64,'.length) * 0.75 / 1024);
+    if (kb <= 250) break;
+    q = +(q - 0.05).toFixed(2);
+  }
+  const finalKb = Math.round((url.length - 'data:image/jpeg;base64,'.length) * 0.75 / 1024);
+
+  try {
+    const a = document.createElement('a');
+    const modelName = lastFormData?.model?.name || 'MMS';
+    a.download = `MMS_${modelName}_${Date.now()}.jpg`;
+    a.href = url;
+    a.click();
+    toast(`다운로드 완료 (${finalKb}KB, 품질 ${Math.round(q*100)}%) ✓`,'success');
+  } catch(e){
+    toast('다운로드 실패: canvas가 오염(tainted)되었습니다. 직접 업로드 이미지를 사용해주세요','error');
+  }
+}
+</script>
+</body>
+</html>
