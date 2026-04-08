@@ -603,1160 +603,724 @@ main{
 </div>
 
 <script>
-/* ════════════════════════════════════
-   FIREBASE 설정
-   ─ Firebase 프로젝트 생성 후 아래 값을 교체하세요
-   ─ 미입력 시 인증 없이 로컬 개발 모드로 실행됩니다
-════════════════════════════════════ */
-const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyDfooJuYvQEKzspqPeDWqHEQPp2xkxhpWA",
-  authDomain:        "sg-mms-generator.firebaseapp.com",
-  projectId:         "sg-mms-generator",
-  storageBucket:     "sg-mms-generator.firebasestorage.app",
-  messagingSenderId: "1022333058633",
-  appId:             "1:1022333058633:web:a844e8a4f56985a8524998"
-};
-
-/* ── Firebase 초기화 ── */
-let fbAuth = null, fbDb = null;
-const FB_READY = (function(){
-  if (FIREBASE_CONFIG.apiKey.startsWith('FILL_IN')) return false; // 미설정
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    fbAuth = firebase.auth();
-    fbDb   = firebase.firestore();
-    return true;
-  } catch(e){ console.error('Firebase 초기화 오류', e); return false; }
-})();
-
-/* ── Auth 상태 감시 ── */
-if (FB_READY) {
-  fbAuth.onAuthStateChanged(async (user) => {
-    if (!user){ showAuthTab('login'); return; }
-    try {
-      const snap = await fbDb.collection('users').doc(user.uid).get();
-      if (snap.exists && snap.data().status === 'approved'){
-        const d = snap.data();
-        showAppContent(d.name || user.email, d.store || '');
-      } else {
-        const name = snap.exists ? snap.data().name : user.email;
-        showAuthScreen('pending', name);
-      }
-    } catch(e){ console.error(e); showAuthTab('login'); }
-  });
-} else {
-  // Firebase 미설정 → 개발 모드: 인증 없이 앱 직접 실행
-  document.getElementById('authOverlay').classList.add('hidden');
-  initApp();
-}
-
-/* ── 화면 전환 헬퍼 ── */
-function showAuthTab(tab){
-  ['login','signup','pending'].forEach(s =>
-    document.getElementById('screen'+s.charAt(0).toUpperCase()+s.slice(1))
-            .classList.remove('active')
-  );
-  const t = tab === 'login' ? 'Login' : tab === 'signup' ? 'Signup' : 'Pending';
-  document.getElementById('screen'+t).classList.add('active');
-}
-function showAuthScreen(which, name){
-  if (which === 'pending'){
-    showAuthTab('pending');
-    if (name) document.getElementById('pendingDesc').innerHTML =
-      `<strong>${name}</strong>님의 가입 신청이 완료되었습니다.<br>관리자가 확인 후 승인해 드립니다.`;
-  }
-}
-function showAppContent(name, store){
-  document.getElementById('authOverlay').classList.add('hidden');
-  document.getElementById('appHeader').style.display = '';
-  document.getElementById('appMain').style.display   = '';
-  // 헤더 사용자 칩 표시
-  const chip = document.getElementById('authUserChip');
-  const lo   = document.getElementById('btnLogout');
-  chip.textContent = store ? `${name} · ${store}` : name;
-  chip.style.display = '';
-  lo.style.display   = '';
-  initApp();
-}
-function authLogout(){
-  if (fbAuth) fbAuth.signOut().catch(()=>{});
-  location.reload();
-}
-
-/* ── 회원가입 ── */
-async function authSignup(){
-  const name  = (document.getElementById('signupName').value  || '').trim();
-  const store = (document.getElementById('signupStore').value || '').trim();
-  const email = (document.getElementById('signupEmail').value || '').trim();
-  const pw    =  document.getElementById('signupPw').value;
-  const msg   = document.getElementById('signupMsg');
-  if (!name || !email || !pw){ setAuthMsg('signupMsg','모든 항목을 입력해주세요','err'); return; }
-  if (pw.length < 6){ setAuthMsg('signupMsg','비밀번호는 6자 이상이어야 합니다','err'); return; }
-  setBtnLoading('signupBtn', true);
-  try {
-    const cred = await fbAuth.createUserWithEmailAndPassword(email, pw);
-    await fbDb.collection('users').doc(cred.user.uid).set({
-      name, store, email, status: 'pending',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    showAuthScreen('pending', name);
-  } catch(e){ setAuthMsg('signupMsg', parseFirebaseErr(e), 'err'); }
-  finally { setBtnLoading('signupBtn', false); }
-}
-
-/* ── 로그인 ── */
-async function authLogin(){
-  const email = (document.getElementById('loginEmail').value || '').trim();
-  const pw    =  document.getElementById('loginPw').value;
-  if (!email || !pw){ setAuthMsg('loginMsg','이메일과 비밀번호를 입력해주세요','err'); return; }
-  setBtnLoading('loginBtn', true);
-  try {
-    await fbAuth.signInWithEmailAndPassword(email, pw);
-    // onAuthStateChanged 에서 처리
-  } catch(e){ setAuthMsg('loginMsg', parseFirebaseErr(e), 'err'); }
-  finally { setBtnLoading('loginBtn', false); }
-}
-
-/* ── 유틸 ── */
-function setAuthMsg(id, text, cls){
-  const el = document.getElementById(id);
-  el.textContent = text; el.className = 'auth-msg ' + (cls || '');
-}
-function setBtnLoading(id, on){
-  const b = document.getElementById(id);
-  b.disabled = on; b.textContent = on ? '처리 중...' : (id.includes('login') ? '로그인' : '가입 신청');
-}
-function parseFirebaseErr(e){
-  const c = e.code || '';
-  if (c.includes('email-already-in-use')) return '이미 가입된 이메일입니다';
-  if (c.includes('wrong-password') || c.includes('invalid-credential')) return '이메일 또는 비밀번호가 틀렸습니다';
-  if (c.includes('user-not-found'))  return '등록되지 않은 이메일입니다';
-  if (c.includes('weak-password'))   return '비밀번호는 6자 이상이어야 합니다';
-  if (c.includes('invalid-email'))   return '올바른 이메일 형식이 아닙니다';
-  if (c.includes('too-many-requests'))return '잠시 후 다시 시도해주세요';
-  return e.message || '오류가 발생했습니다';
-}
-
-/* ════════════════════════════════════
-   GEMINI 동적 모델 검색 (ListModels API)
-   v1 → v1beta 순으로 시도, 결과 캐시
-════════════════════════════════════ */
-let cachedModelList = null; // [{ id, version }, ...]
-
-/* 모델 조회 실패 시 사용할 폴백 목록 (2025~2026 기준 주요 모델) */
-const FALLBACK_MODELS = [
-  { id:'gemini-2.0-flash',           version:'v1beta' },
-  { id:'gemini-2.0-flash-lite',      version:'v1beta' },
-  { id:'gemini-2.5-flash-preview-04-17', version:'v1beta' },
-  { id:'gemini-1.5-flash',           version:'v1beta' },
-  { id:'gemini-1.5-flash-8b',        version:'v1beta' },
-  { id:'gemini-1.5-pro',             version:'v1beta' },
-  { id:'gemini-2.0-flash',           version:'v1'    },
-  { id:'gemini-1.5-flash',           version:'v1'    },
-];
-
-async function discoverModels(forceKey) {
-  const key = forceKey || apiKey;
-  if (!forceKey && cachedModelList) return cachedModelList;
-
-  for (const ver of ['v1', 'v1beta']) {
-    try {
-      const res = await apiFetch(
-        `https://generativelanguage.googleapis.com/${ver}/models?key=${key}`,
-        { method: 'GET' }
-      );
-      if (!res.ok) {
-        const e = await res.json().catch(()=>({}));
-        // 401/403은 키 문제 — 즉시 중단
-        if (res.status === 401 || res.status === 403)
-          throw new Error('API 키 오류 ' + res.status + ': ' + (e.error?.message || '권한 없음'));
-        continue;
-      }
-      const data = await res.json();
-      const list = (data.models || [])
-        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-        .map(m => ({ id: m.name.replace('models/', ''), version: ver }))
-        .filter(m => m.id.toLowerCase().includes('gemini') && !m.id.includes('vision'));
-
-      if (list.length > 0) {
-        // flash 계열 우선 정렬
-        list.sort((a, b) => {
-          const rank = id =>
-            id.includes('2.0-flash') ? 0 :
-            id.includes('flash') ? 1 :
-            id.includes('pro')   ? 2 : 3;
-          return rank(a.id) - rank(b.id);
-        });
-        if (!forceKey) cachedModelList = list;
-        return list;
-      }
-    } catch(e) {
-      if (e.message.includes('API 키 오류')) throw e;
-      console.warn(`ListModels ${ver} 실패:`, e.message);
-    }
-  }
-  return null;
-}
-
-/* ════════════════════════════════════
-   CORS-SAFE FETCH WRAPPER
-   순서: ①직접 호출 → ②corsproxy.io → 오류
-════════════════════════════════════ */
-const CORS_PROXY = 'https://corsproxy.io/?url=';
-
-async function apiFetch(url, options, timeoutMs = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const opts = { ...options, signal: controller.signal };
-
-  // ① 직접 호출 시도
-  try {
-    const res = await fetch(url, opts);
-    clearTimeout(timer);
-    return res;
-  } catch(e1) {
-    const msg = e1.message || '';
-    // AbortError 나 실제 네트워크 오류가 아니면 다시 던지기
-    if (msg.includes('abort') || msg.includes('AbortError')) throw e1;
-    console.warn('직접 호출 실패, CORS 프록시 시도:', msg);
-  }
-
-  // ② corsproxy.io 경유 시도
-  try {
-    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
-    const controller2 = new AbortController();
-    const timer2 = setTimeout(() => controller2.abort(), timeoutMs);
-    const res = await fetch(proxyUrl, { ...options, signal: controller2.signal });
-    clearTimeout(timer2);
-    clearTimeout(timer);
-    console.log('CORS 프록시로 연결 성공');
-    return res;
-  } catch(e2) {
-    clearTimeout(timer);
-    throw new Error('API 연결 실패 (직접·프록시 모두 차단).\n\n💡 해결방법:\n① 「AI 없이 템플릿 생성」 체크 후 재시도\n② python3 -m http.server 8080 실행 후 localhost로 접속');
-  }
-}
-
-/* ════════════════════════════════════
-   DATA: 폰 모델 + 이미지 URL
-════════════════════════════════════ */
-const MODELS = {
-  samsung: [
-    { id:'s26ultra', name:'갤럭시 S26 울트라',
-      img:'https://images.samsung.com/kdp/goods/2026/01/30/b3a58f22-3a19-4c20-93d2-d84670e2e233.png' },
-    { id:'s26plus',  name:'갤럭시 S26+',
-      img:'https://images.samsung.com/kdp/goods/2026/01/29/8a048319-ef9d-4c1a-aa35-ce0e2b6d4c15.png' },
-    { id:'s26',      name:'갤럭시 S26',
-      img:'https://images.samsung.com/kdp/goods/2026/01/29/d67557b7-4d1e-4a91-9e0e-eb5ebacc0f71.png' },
-    { id:'ztri',     name:'갤럭시 Z 트라이폴드',
-      img:'https://images.samsung.com/kdp/goods/2025/11/27/29ff1188-ffba-4839-a37f-d4574481a023.png' },
-    { id:'zfold7',   name:'갤럭시 Z 폴드7',
-      img:'https://images.samsung.com/kdp/goods/2025/07/03/2af2533b-4309-431a-92b8-73d7513454a1.png' },
-    { id:'s25ultra', name:'갤럭시 S25 울트라',
-      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2501/gallery/sec-galaxy-s25-ultra-s938-sm-s938nzkakoo-thumb-544262517?$480_480_PNG$' },
-    { id:'s25plus',  name:'갤럭시 S25+',
-      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2501/gallery/sec-galaxy-s25-plus-s936-sm-s936nzbakoo-thumb-544258547?$480_480_PNG$' },
-    { id:'s25',      name:'갤럭시 S25',
-      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2501/gallery/sec-galaxy-s25-s931-sm-s931nzbakoo-thumb-544255117?$480_480_PNG$' },
-    { id:'s25fe',    name:'갤럭시 S25 FE',
-      img:'https://images.samsung.com/is/image/samsung/p6pim/sec/2506/gallery/sec-galaxy-s25fe-s731-sm-s731nbgakoo-thumb?$480_480_PNG$' },
-  ],
-  apple: [
-    { id:'i17promax', name:'iPhone 17 Pro Max',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17pro-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
-    { id:'i17pro',    name:'iPhone 17 Pro',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17pro-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
-    { id:'iair',      name:'iPhone Air',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17air-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
-    { id:'i17',       name:'iPhone 17',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
-    { id:'i17e',      name:'iPhone 17e',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-17e-202603?wid=600&hei=600&fmt=png-alpha&.v=1' },
-    { id:'i16promax', name:'iPhone 16 Pro Max',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-16pro-202409?wid=600&hei=600&fmt=png-alpha&.v=1' },
-    { id:'i16pro',    name:'iPhone 16 Pro',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-16pro-202409?wid=600&hei=600&fmt=png-alpha&.v=1' },
-    { id:'i16',       name:'iPhone 16',
-      img:'https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/iphone-card-40-16plus-202509?wid=600&hei=600&fmt=png-alpha&.v=1' },
-  ]
-};
-
-/* ════════════════════════════════════
-   STATE
-════════════════════════════════════ */
-let apiKey      = localStorage.getItem('gemini_key') || '';
-let brand       = 'samsung';
-let targets     = [];
-let imgStyle    = 'dark';
-let customImg   = null;   // custom uploaded Image object
-let lastMms     = '';
-let isRunning   = false;
-let lastFormData = null;
-
-/* ════════════════════════════════════
-   INIT
-════════════════════════════════════ */
-/* ── 앱 초기화 (인증 완료 후 or Firebase 미설정 시 호출) ── */
-function initApp(){
-  buildModelList('samsung');
-  // Tag click
-  document.querySelectorAll('.tag').forEach(t =>
-    t.addEventListener('click', () => {
-      t.classList.toggle('active');
-      const v = t.dataset.v;
-      targets = targets.includes(v) ? targets.filter(x=>x!==v) : [...targets, v];
-    })
-  );
-  // file:// 프로토콜 감지
-  if (location.protocol === 'file:') {
-    document.getElementById('protoBanner').classList.add('show');
-  }
-  if (!apiKey) openSettings();
-}
-
-/* ════════════════════════════════════
-   UI HELPERS
-════════════════════════════════════ */
-function openSettings(){
-  document.getElementById('inputApiKey').value = apiKey;
-  document.getElementById('modalSettings').classList.add('show');
-}
-function closeSettings(){ document.getElementById('modalSettings').classList.remove('show'); }
-function saveSettings(){
-  const v = document.getElementById('inputApiKey').value.trim();
-  if (!v){ toast('API 키를 입력해주세요','error'); return; }
-  if (!v.startsWith('AIza')){ toast('API 키가 올바르지 않습니다. AIzaSy...로 시작해야 합니다','error'); return; }
-  apiKey = v;
-  localStorage.setItem('gemini_key', apiKey);
-  closeSettings();
-  toast('API 키가 저장되었습니다 ✓','success');
-}
-document.getElementById('btnSettings').onclick = openSettings;
-
-async function testApiKey(){
-  const k = document.getElementById('inputApiKey').value.trim();
-  const el = document.getElementById('apiTestResult');
-  if (!k){ el.style.color='#f87171'; el.textContent='❌ API 키를 입력해주세요'; return; }
-  el.style.color='#fbbf24'; el.textContent='🔄 사용 가능한 모델 조회 중...';
-  try {
-    let list = await discoverModels(k);
-    if (list && list.length > 0) {
-      const names = list.slice(0, 4).map(m => m.id).join(', ');
-      const extra = list.length > 4 ? ` 외 ${list.length - 4}개` : '';
-      const ver   = list[0].version;
-      el.style.color = '#4ade80';
-      el.textContent = `✅ 연결 성공 (API ${ver})! 사용 가능: ${names}${extra}`;
-      cachedModelList = null;
-    } else {
-      // 모델 목록 조회 실패 → 폴백 모델로 직접 ping 테스트
-      el.style.color='#fbbf24'; el.textContent='⚠️ 모델 목록 조회 실패 → 직접 연결 테스트 중...';
-      const testModel = FALLBACK_MODELS[0]; // gemini-2.0-flash
-      const res = await apiFetch(
-        `https://generativelanguage.googleapis.com/${testModel.version}/models/${testModel.id}:generateContent?key=${k}`,
-        { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ contents:[{ parts:[{ text:'ping' }] }] }) }
-      );
-      if (res.ok || res.status === 400) {
-        // 400은 내용 문제지만 API 키는 유효
-        el.style.color = '#4ade80';
-        el.textContent = `✅ API 키 유효! (모델 목록 조회는 제한됨, 생성은 정상 작동)`;
-      } else if (res.status === 401 || res.status === 403) {
-        el.style.color = '#f87171';
-        el.textContent = '❌ API 키 인증 실패 (401/403) — AI Studio에서 키를 다시 발급받으세요';
-      } else {
-        el.style.color = '#fbbf24';
-        el.textContent = `⚠️ 응답 코드 ${res.status} — 키는 입력됐으나 상태 불명확. 생성을 시도해보세요.`;
-      }
-    }
-  } catch(e) {
-    el.style.color = '#f87171';
-    const msg = e.message || '';
-    if (msg.includes('직접·프록시') || msg.toLowerCase().includes('fetch')){
-      el.textContent = '❌ 네트워크 연결 오류 — 인터넷 확인 또는 서버시작.bat 실행 후 재시도';
-    } else if (msg.includes('401') || msg.includes('403') || msg.includes('API 키 오류')) {
-      el.textContent = '❌ API 키 오류 — AI Studio에서 키를 확인하세요';
-    } else {
-      el.textContent = '❌ ' + msg.slice(0, 120);
-    }
-  }
-}
-
-function setBrand(btn){
-  document.querySelectorAll('.toggle').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  brand = btn.dataset.brand;
-  buildModelList(brand);
-}
-
-function buildModelList(b){
-  const sel = document.getElementById('selModel');
-  sel.innerHTML = '<option value="">모델을 선택하세요</option>';
-  MODELS[b].forEach(m => {
-    const o = document.createElement('option');
-    o.value = m.id; o.textContent = m.name;
-    sel.appendChild(o);
-  });
-  document.getElementById('modelThumb').innerHTML = '<span class="thumb-empty">모델을 선택하면 이미지가 표시됩니다</span>';
-}
-
-function onModelChange(){
-  const id = document.getElementById('selModel').value;
-  const m = MODELS[brand].find(x=>x.id===id);
-  const thumb = document.getElementById('modelThumb');
-  if (m){
-    thumb.innerHTML = `<img src="${m.img}" alt="${m.name}" crossorigin="anonymous"
-      onerror="this.parentElement.innerHTML='<span class=thumb-empty>이미지 로드 실패 — 직접 업로드 사용</span>'">`;
-  } else {
-    thumb.innerHTML = '<span class="thumb-empty">모델을 선택하면 이미지가 표시됩니다</span>';
-  }
-}
-
-function onCustomImg(input){
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const prev = document.getElementById('customThumbPreview');
-    prev.src = e.target.result;
-    prev.style.display = 'block';
-    const img = new Image();
-    img.onload = () => { customImg = img; };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function setStyle(btn){
-  document.querySelectorAll('.style-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  imgStyle = btn.dataset.style;
-}
-
-function setLoading(on, step=''){
-  const ov = document.getElementById('loadingOverlay');
-  if(on){ ov.classList.add('show'); document.getElementById('loadingStep').textContent = step; }
-  else  { ov.classList.remove('show'); }
-  document.getElementById('btnGen').disabled = on;
-}
-
-function showErrPanel(htmlMsg){
-  const p = document.getElementById('errPanel');
-  document.getElementById('errPanelMsg').innerHTML = htmlMsg;
-  p.style.display = 'block';
-}
-
-function toast(msg, type=''){
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast show ' + type;
-  setTimeout(() => el.className='toast', 2800);
-}
-
-/* ════════════════════════════════════
-   COLLECT FORM DATA
-════════════════════════════════════ */
-function getForm(){
-  const modelId = document.getElementById('selModel').value;
-  if (!modelId){ toast('모델을 선택해주세요','error'); return null; }
-  const model   = MODELS[brand].find(m=>m.id===modelId);
-
-  const orig    = document.getElementById('inpOrig').value.trim();
-  const disc    = document.getElementById('inpDisc').value.trim();
-  if (!orig || !disc){ toast('가격 정보를 입력해주세요','error'); return null; }
-
-  const saving  = document.getElementById('inpSaving').value.trim();
-  const sDate   = document.getElementById('inpStart').value;
-  const eDate   = document.getElementById('inpEnd').value;
-  const benefit = document.getElementById('inpBenefit').value.trim();
-
-  const period = sDate && eDate
-    ? `${fmtDate(sDate)} ~ ${fmtDate(eDate)}`
-    : '';
-
-  return { brand, model, orig, disc, saving, period, targets:[...targets], benefit, style:imgStyle };
-}
-
-function fmtDate(s){
-  const d = new Date(s);
-  return `${d.getMonth()+1}/${d.getDate()}`;
-}
-
-/* ════════════════════════════════════
-   MAIN GENERATE FLOW
-════════════════════════════════════ */
-async function startGenerate(){
-  if (isRunning) return;
-  const templateMode = document.getElementById('chkTemplate').checked;
-  if (!templateMode && !apiKey){ openSettings(); return; }
-
-  const fd = getForm();
-  if (!fd) return;
-  lastFormData = fd;
-
-  isRunning = true;
-  document.getElementById('emptyState')?.remove();
-  document.getElementById('mmsBox').classList.remove('show');
-  document.getElementById('actionRow').classList.remove('show');
-
-  try {
-    let mmsText = '';
-
-    if (templateMode) {
-      // ── 템플릿 모드: AI 없이 즉시 생성 ──
-      setLoading(true, '🖼️ 템플릿으로 이미지 생성 중...');
-      mmsText = buildTemplateMms(fd);
-    } else {
-      // ── AI 모드 ──
-      setLoading(true, '📝 MMS 문구 생성 중 (Gemini)...');
-      mmsText = await genMmsText(fd);
-    }
-    lastMms = mmsText;
-
-    // 배경 이미지 (AI 모드만, 실패 시 자동 Canvas 폴백)
-    let bgB64 = null;
-    if (!templateMode) {
-      setLoading(true, '🎨 배경 이미지 생성 중 (Imagen 3)...');
-      try {
-        bgB64 = await genBackground(fd);
-        setLoading(true, '✅ Imagen 3 배경 생성 완료');
-      } catch(e){
-        const msg = e.message || '';
-        if (msg.includes('403') || msg.includes('permission') || msg.includes('billing')){
-          toast('Imagen 3: 유료 플랜 필요 → Canvas 배경으로 자동 전환됩니다','');
-        } else if (msg.includes('404') || msg.includes('not found')){
-          toast('Imagen 3 미지원 API 키 → Canvas 배경으로 자동 전환됩니다','');
-        } else {
-          toast('Imagen 생성 실패 → Canvas 배경 사용: ' + msg.slice(0,60),'');
-        }
-        console.warn('Imagen 실패:', msg);
-      }
-    }
-
-    // 제품 이미지 로드
-    setLoading(true, '📱 제품 이미지 로드 중...');
-    const phoneImg = customImg || await loadPhoneImg(fd.model.img);
-
-    // Canvas 합성
-    setLoading(true, '✨ 이미지 합성 중...');
-    await document.fonts.ready;
-    await composeCanvas(bgB64, phoneImg, fd, mmsText);
-
-    // 결과 표시
-    showMms(mmsText);
-    document.getElementById('actionRow').classList.add('show');
-    const modeLabel = templateMode ? '템플릿 모드' : 'AI 모드';
-    toast(`MMS 생성 완료! (${modeLabel}) ✓`, 'success');
-
-  } catch(e){
-    console.error('생성 오류:', e);
-    const msg = e.message || String(e);
-    let guide = '';
-    if (msg.includes('직접·프록시') || msg.toLowerCase().includes('fetch')){
-      guide = '<br><br>💡 <strong>해결방법 (3가지 중 하나)</strong><br>'
-        + '① 아래 <strong>「AI 없이 템플릿 생성」</strong> 체크 후 재시도 (즉시 가능)<br>'
-        + '② 윈도우: <code>서버시작.bat</code> 실행 후 브라우저로 접속<br>'
-        + '③ API 설정에서 <strong>연결 테스트</strong> 클릭하여 키 확인';
-    } else if (msg.includes('401') || msg.includes('API key') || msg.includes('키 오류')){
-      guide = '<br><br>💡 <strong>해결:</strong> ⚙️ API 설정에서 API 키를 다시 입력하고 「연결 테스트」를 눌러주세요';
-    } else if (msg.includes('quota') || msg.includes('429')){
-      guide = '<br><br>💡 <strong>해결:</strong> Gemini 무료 한도 초과 — 1분 후 다시 시도하거나 내일 재사용하세요';
-    }
-    showErrPanel('❌ 오류: ' + msg.replace(/\n/g,'<br>').slice(0,200) + guide);
-  } finally {
-    isRunning = false;
-    setLoading(false);
-  }
-}
-
-/* 템플릿 모드: Gemini 없이 MMS 문구 자동 생성 (실제 발송 샘플 스타일 적용) */
-function buildTemplateMms(fd){
-  const tgt = fd.targets.length ? fd.targets[0] : '';
-
-  // 타겟별 제목 매핑
-  const titleMap = {
-    '단골 고객 전용': '단골 고객 전용 특가 혜택',
-    '타사 단골 전용': '타사 고객 전환 특가 혜택',
-    '기기변경': '기기변경 특가 혜택 안내',
-    '번호이동': '번호이동 파격 특가 오픈',
-  };
-  const title = tgt ? (titleMap[tgt] || tgt + ' 특가 혜택') : '특가 혜택 안내';
-
-  // 타겟별 오프닝 문구
-  const openMap = {
-    '단골 고객 전용': '휴대폰 오래 쓰셨다면 지금이 교체 타이밍입니다.',
-    '타사 단골 전용': '지금 이동하시면 파격 혜택을 드립니다.',
-    '기기변경': '기기변경 고객님을 위한 단독 특가입니다.',
-    '번호이동': '번호이동 파격 최저가 오늘만 한정 운영!',
-  };
-  const opening = tgt ? (openMap[tgt] || '한정 특가 혜택을 안내드립니다.') : '한정 특가 혜택을 안내드립니다.';
-
-  const saving  = fd.saving  ? `\n   (${fd.saving} 절약)` : '';
-  const period  = fd.period  ? `\n※ 행사기간 : ${fd.period}` : '';
-  const benefit = fd.benefit ? `\n★ ${fd.benefit}` : '';
-
-  return `[ ${title} ]
-
-${opening}
-
-■ ${fd.model.name}
- - 출고가 : ${fd.orig}
- - 구매가 : ${fd.disc}${saving}
-${fd.benefit ? ' - ' + fd.benefit : ''}
-${period}
-※ 준비된 수량 소진 시 조기 종료${benefit}
-
-매장 방문 또는 전화 문의 주시면 친절히 안내드립니다.`.replace(/\n{3,}/g, '\n\n').trim();
-}
-
-/* ════════════════════════════════════
-   GEMINI: TEXT (모델 폴백 체인)
-════════════════════════════════════ */
-async function genMmsText(fd){
-  const tStr = fd.targets.length ? fd.targets[0] : '';
-
-  // 타겟별 톤 가이드
-  const toneMap = {
-    '단골 고객 전용': '장기 이용 고객 감사 톤 — "오래 쓰셨다면", "단골 고객님께" 등 감성적 접근, 신뢰 기반 혜택 강조',
-    '타사 단골 전용': '타사 고객 유치 톤 — 이동 메리트와 파격 가격 직접 강조, "지금 오시면" 등 유인',
-    '기기변경': '기기변경 고객 톤 — 단순·명확한 가격 혜택 중심, 조건 간결하게',
-    '번호이동': '번호이동 긴급 톤 — "선착순", "오늘만", "긴급 오픈" 등 희소성·긴급성 극대화',
-  };
-  const toneGuide = tStr && toneMap[tStr] ? toneMap[tStr] : '일반 고객 대상 — 혜택 명확, 가격 중심';
-
-  const prompt = `당신은 한국 이동통신 대리점 MMS 마케팅 전문가입니다.
-아래 실제 발송 샘플을 참고해 동일한 스타일로 MMS 문구를 작성하세요.
-
-[실제 발송 샘플 — 이 스타일을 따르세요]
----
-[ 번호이동 특가 혜택 긴급 오픈 ]
-
-지금 파격 최저가 오늘만 한정!
-
-① 갤럭시S25 FE  94만원 → 할부0원
-② 아이폰17  128만원 → 34만원
-
-오늘만 한정수량 조기마감 예상됩니다.
-지금 바로 전화 예약으로 혜택을 확보하세요.
----
-[ 최저가 갤럭시 교체 혜택 ]
-
-휴대폰 3년 이상 쓰셨다면 지금이 최저가 교체 타이밍입니다.
-
-■ 갤럭시 S25 FE
- - 출고가 : 95만원
- - 구매가 : 9만원 (86만원 할인)
-   *공시지원금 기준
-
-기회 놓치지 마세요!
----
-[ 명절 교체 혜택 안내 ]
-
-SKT 장기사용 고객님께 드리는 안내입니다
-
-갤럭시 S25 FE
-▶ 19만원 구매 가능
-▶ 공시지원금 기준
-
-휴대폰 오래 쓰셨다면 이번이 교체 기회입니다
-
-※ 행사기간 : 2/13 ~ 2/18
-※ 준비된 수량 소진 시 종료
-
-매장 방문하셔서 체험해보세요
----
-
-[이번 행사 정보]
-- 기기: ${fd.model.name}
-- 출고가: ${fd.orig}
-- 구매가: ${fd.disc}
-${fd.saving ? `- 할인폭: ${fd.saving}` : ''}
-${fd.period ? `- 행사 기간: ${fd.period}` : ''}
-${tStr ? `- 대상: ${tStr}` : ''}
-${fd.benefit ? `- 추가 혜택: ${fd.benefit}` : ''}
-
-[작성 규칙 — 반드시 준수]
-1. 150자 이내 (짧고 임팩트 있게)
-2. 제목은 대괄호 [ ] 안에 핵심 키워드 (예: [ 번호이동 특가 긴급 오픈 ])
-3. 타겟 톤: ${toneGuide}
-4. 가격 표현: "출고가 → 구매가 (할인폭)" 형식 유지
-5. 허용 기호: ★ ▶ ■ ※ ①②③ 만 사용
-   - 이모지(예: 🔥📱💰) 절대 사용 금지
-   - 특수 유니코드 기호(예: ◆◇▲△) 사용 금지
-6. 조건·기간은 ※ 로 후미 처리
-7. 마지막 줄: 내방 또는 전화 예약 유도 CTA
-8. 자연스러운 한국어, 경어 사용
-
-문자 메시지 본문만 출력하고 설명·부연은 하지 마세요.`;
-
-  // 사용 가능한 모델 목록을 동적으로 조회
-  setLoading(true, '🔍 사용 가능한 Gemini 모델 조회 중...');
-  let modelList = await discoverModels();
-  if (!modelList || modelList.length === 0) {
-    // 모델 목록 조회 실패(CORS·네트워크) → 폴백 모델로 자동 시도
-    console.warn('ListModels 조회 실패 → 폴백 모델 목록으로 시도');
-    setLoading(true, '⚠️ 모델 조회 실패 → 기본 모델로 재시도 중...');
-    modelList = FALLBACK_MODELS;
-  }
-
-  let lastErr = null;
-  for (const { id, version } of modelList) {
-    try {
-      setLoading(true, `📝 MMS 문구 생성 중 (${id})...`);
-      const res = await apiFetch(
-        `https://generativelanguage.googleapis.com/${version}/models/${id}:generateContent?key=${apiKey}`,
-        { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ contents:[{ parts:[{ text:prompt }] }] }) }
-      );
-      if (res.status === 404){ lastErr = new Error(`모델 없음: ${id}`); continue; }
-      if (!res.ok){
-        const e = await res.json().catch(()=>({}));
-        const msg = e.error?.message || `HTTP ${res.status}`;
-        if (res.status===401 || res.status===403){ throw new Error('API 키 오류: ' + msg); }
-        lastErr = new Error(msg); continue;
-      }
-      const data = await res.json();
-      console.log('✅ 사용 모델:', id, '(', version, ')');
-      return data.candidates[0].content.parts[0].text.trim();
-    } catch(e) {
-      if (e.message && (e.message.includes('직접·프록시') || e.message.includes('API 키 오류'))){ throw e; }
-      lastErr = e;
-    }
-  }
-  const errMsg = lastErr?.message || '알 수 없는 오류';
-  if (errMsg.includes('직접·프록시') || errMsg.toLowerCase().includes('fetch')){
-    throw new Error('API 연결 실패 (직접·프록시 모두 차단).\n\n💡 해결방법:\n① 아래 「AI 없이 템플릿 생성」 체크 후 재시도 (즉시 가능)\n② 서버시작.bat 실행 후 localhost:8080으로 접속');
-  }
-  throw new Error('모든 Gemini 모델 시도 실패: ' + errMsg.slice(0, 100));
-}
-
-/* ════════════════════════════════════
-   GEMINI: IMAGEN 3 BACKGROUND
-════════════════════════════════════ */
-async function genBackground(fd){
-  const stylePrompts = {
-    dark:    'dark navy blue background (#0a1628), bright lime yellow geometric accent lines and diagonal stripes, abstract technology circuit patterns, high contrast K-style advertisement',
-    bright:  'clean white and light blue background, modern minimalist design, subtle gradient, professional tech advertisement with blue accents',
-    premium: 'deep black and gold premium background, luxury mobile phone advertisement, elegant geometric patterns, metallic gold accent lines'
-  };
-
-  const prompt = `Professional South Korean mobile phone promotional advertisement background,
-${stylePrompts[fd.style]},
-no text, no phone devices, no people,
-square 1:1 format, suitable for overlay composition,
-${fd.brand==='samsung' ? 'Samsung Galaxy' : 'Apple iPhone'} promotional aesthetic`;
-
-  // Imagen은 v1beta에서만 지원
-  const res = await apiFetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
-    { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        instances:[{ prompt }],
-        parameters:{ sampleCount:1, aspectRatio:'1:1', safetySetting:'BLOCK_ONLY_HIGH', personGeneration:'dont_allow' }
-      })
-    }
-  );
-  if (!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`Imagen HTTP ${res.status}`); }
-  const data = await res.json();
-  if (!data.predictions?.[0]) throw new Error('Imagen 응답 없음');
-  return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
-}
-
-/* ════════════════════════════════════
-   PHONE IMAGE LOADER (CORS safe)
-════════════════════════════════════ */
-async function loadPhoneImg(url){
-  // 1. Direct with CORS
-  try { return await imgLoad(url, true); } catch {}
-  // 2. corsproxy.io fallback
-  try { return await imgLoad(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, true); } catch {}
-  // 3. No CORS (canvas will be tainted — download disabled)
-  try { return await imgLoad(url, false); } catch {}
-  return null;
-}
-
-function imgLoad(src, cors=true){
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    if (cors) img.crossOrigin = 'anonymous';
-    img.onload  = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-    setTimeout(()=>reject(new Error('timeout')), 9000);
-  });
-}
-
-/* ════════════════════════════════════
-   CANVAS COMPOSITION  1000×1000
-   ── 전문 가격 중심 프로모션 디자인 v3 ──
-════════════════════════════════════ */
-async function composeCanvas(bgB64, phoneImg, fd, mmsText){
-  const canvas = document.getElementById('previewCanvas');
-  const ctx    = canvas.getContext('2d');
-  canvas.width = canvas.height = 1000;
-
-  const AC    = ACCENT(fd.style);
-  const isDark = fd.style !== 'bright';
-  const TC    = isDark ? '#ffffff'                    : '#0a1628';
-  const TC2   = isDark ? 'rgba(255,255,255,0.62)'    : 'rgba(10,22,40,0.58)';
-  const TC3   = isDark ? 'rgba(255,255,255,0.32)'    : 'rgba(10,22,40,0.32)';
-
-  /* ── 1. 배경 ── */
-  if(bgB64){
-    const bg = await imgLoad(bgB64, false);
-    ctx.drawImage(bg, 0, 0, 1000, 1000);
-    const ov = ctx.createLinearGradient(0,0,1000,0);
-    if(isDark){
-      ov.addColorStop(0,    'rgba(6,14,30,0.95)');
-      ov.addColorStop(0.46, 'rgba(6,14,30,0.80)');
-      ov.addColorStop(0.68, 'rgba(6,14,30,0.22)');
-      ov.addColorStop(1,    'rgba(6,14,30,0.02)');
-    } else {
-      ov.addColorStop(0,    'rgba(245,250,255,0.96)');
-      ov.addColorStop(0.46, 'rgba(245,250,255,0.78)');
-      ov.addColorStop(0.68, 'rgba(245,250,255,0.20)');
-      ov.addColorStop(1,    'rgba(245,250,255,0.02)');
-    }
-    ctx.fillStyle = ov; ctx.fillRect(0,0,1000,1000);
-  } else {
-    drawFallbackBg(ctx, fd.style);
-  }
-
-  /* ── 2. 폰 이미지 — 원본 비율 보존, 존 내 완전 맞춤 ── */
-  // 폰 존: 1.2배 확대 — Y를 -50부터 시작해 상하 살짝 클리핑 허용, 텍스트 우측으로 안전 확보
-  const PZONE_X=450, PZONE_Y=-50, PZONE_W=550, PZONE_H=1100;
-
-  if(phoneImg){
-    // ① 원본 비율 계산 (naturalWidth 우선, 없으면 width fallback)
-    const natW = phoneImg.naturalWidth  || phoneImg.width  || 1;
-    const natH = phoneImg.naturalHeight || phoneImg.height || 1;
-    const aspect = natW / natH;
-
-    // ② 존 안에 꽉 차되 비율 유지 (contain 방식)
-    let dW, dH;
-    if(aspect >= PZONE_W / PZONE_H){
-      dW = PZONE_W; dH = Math.round(PZONE_W / aspect);
-    } else {
-      dH = PZONE_H; dW = Math.round(PZONE_H * aspect);
-    }
-    const dX = PZONE_X + Math.round((PZONE_W - dW) / 2);
-    const dY = PZONE_Y + Math.round((PZONE_H - dH) / 2);
-
-    // ③ 헤일로 글로우
-    const hCX = dX + dW*0.5, hCY = dY + dH*0.42;
-    const halo = ctx.createRadialGradient(hCX,hCY,16, hCX,hCY,Math.max(dW,dH)*0.58);
-    halo.addColorStop(0, `${AC}28`); halo.addColorStop(0.5,`${AC}0E`); halo.addColorStop(1,'transparent');
-    ctx.fillStyle=halo; ctx.fillRect(dX-80,dY-80,dW+160,dH+160);
-
-    // ④ 폰 이미지 (비율 보존)
-    ctx.drawImage(phoneImg, dX, dY, dW, dH);
-
-    // ⑤ 바닥 타원 그림자
-    const shCY = dY + dH + 10;
-    const sh = ctx.createRadialGradient(dX+dW/2,shCY,3, dX+dW/2,shCY,dW*0.42);
-    sh.addColorStop(0,'rgba(0,0,0,0.38)'); sh.addColorStop(1,'transparent');
-    ctx.fillStyle=sh;
-    ctx.beginPath(); ctx.ellipse(dX+dW/2, shCY, dW*0.40, 16, 0,0,Math.PI*2); ctx.fill();
-  }
-
-  /* ── 3. 텍스트 콘텐츠 (좌측) ── */
-  ctx.textBaseline = 'top';
-  const LX=52, LW=420;  // 텍스트 컬럼 너비 420px
-
-  // ── 수직 레이아웃: 전체 895px을 요소별로 분배 ──
-  // 고정 y 기반 배치 (영역을 꽉 채우도록 간격 설계)
-  let y = 52;
-
-  // ① 이벤트 헤드 배지 — 라운드 컨테이너 안에 크게 (타겟+행사 통합, 중복 제거)
-  const evtHeadMap = {
-    '단골 고객 전용': '단골 고객 전용 특가 행사',
-    '타사 단골 전용': '타사 단골 전용 특가 행사',
-    '기기변경': '기기변경 전용 특가 행사',
-    '번호이동': '번호이동 특가 행사',
-  };
-  const evtHead = fd.targets.length > 0
-    ? (evtHeadMap[fd.targets[0]] || fd.targets[0] + ' 특가 행사')
-    : '한정 특가 행사';
-  // 폰트 자동 조절 (최대 24px, 텍스트 너비 LW-50 이하로)
-  let evtSz = 24;
-  ctx.font = `700 ${evtSz}px "Noto Sans KR"`;
-  while(ctx.measureText(evtHead).width > LW - 52 && evtSz > 16){ evtSz--; ctx.font=`700 ${evtSz}px "Noto Sans KR"`; }
-  const evtTxtW = ctx.measureText(evtHead).width;
-  const evtPadX = 26, evtPadY = 16;
-  const evtW = evtTxtW + evtPadX * 2;
-  const evtH = evtSz + evtPadY * 2;
-  const evtR = evtH / 2;  // 완전 라운드 pill
-  // 배지 배경 + 테두리
-  ctx.fillStyle = `${AC}22`; roundRect(ctx, LX, y, evtW, evtH, evtR); ctx.fill();
-  ctx.strokeStyle = AC; ctx.lineWidth = 2; roundRect(ctx, LX, y, evtW, evtH, evtR); ctx.stroke();
-  // 배지 텍스트
-  ctx.fillStyle = AC;
-  ctx.font = `700 ${evtSz}px "Noto Sans KR"`;
-  ctx.fillText(evtHead, LX + evtPadX, y + evtPadY);
-  y += evtH + 44;
-
-  // ③ 모델명 — 한 줄 우선, 폰트 자동 축소 (최대 80px)
-  ctx.fillStyle = TC;
-  let nameSz = 80;
-  ctx.font = `900 ${nameSz}px "Noto Sans KR"`;
-  while(ctx.measureText(fd.model.name).width > LW && nameSz > 40){
-    nameSz -= 3;
-    ctx.font = `900 ${nameSz}px "Noto Sans KR"`;
-  }
-  const nameLines = splitLines(ctx, fd.model.name, LW);
-  for(const ln of nameLines){ ctx.fillText(ln, LX, y); y += nameSz + 10; }
-  y += 22;
-
-  // ④ 구분선
-  ctx.fillStyle = AC; ctx.fillRect(LX, y, 56, 5);
-  ctx.fillStyle = isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.10)';
-  ctx.fillRect(LX+64, y, LW-64, 5);
-  y += 58;
-
-  /* ─────── 가격 3단 계층 (출고가→구매가→할인) ─────── */
-
-  // ⑤-A 출고가 (취소선) — 구매가 대비는 주되 명확하게 표시
-  if(fd.orig){
-    // 출고가 배경 pill (더 잘 보이도록)
-    const origColor = isDark ? 'rgba(255,255,255,0.68)' : 'rgba(10,22,40,0.60)';
-    ctx.fillStyle = origColor;
-    ctx.font = `500 26px "Noto Sans KR"`;
-    const origStr = '출고가  ' + fd.orig;
-    const ow = ctx.measureText(origStr).width;
-    ctx.fillText(origStr, LX, y);
-    // 취소선 — 텍스트 중앙을 가로지르도록 (26px 폰트 기준 약 13px)
-    ctx.strokeStyle = isDark ? 'rgba(255,80,80,0.85)' : 'rgba(180,30,30,0.75)';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(LX, y+13); ctx.lineTo(LX+ow, y+13); ctx.stroke();
-    y += 60;
-  }
-
-  // ⑤-B 구매가 라벨 — accent 색 pill 태그 (깔끔한 가격 레이블)
-  const gLabel = '구매가';
-  ctx.font = `700 20px "Noto Sans KR"`;
-  const glW = ctx.measureText(gLabel).width + 32;
-  ctx.fillStyle = AC;
-  roundRect(ctx, LX, y, glW, 36, 18); ctx.fill();
-  ctx.fillStyle = isDark ? '#0a1628' : '#ffffff';
-  ctx.fillText(gLabel, LX+16, y+8);
-  y += 50;
-
-  // ⑤-C 구매가 (초대형 — 가장 강조)
-  ctx.fillStyle = AC;
-  ctx.font = `900 136px "Noto Sans KR"`;
-  ctx.fillText(fd.disc, LX, y);
-  y += 158;
-
-  // ⑤-D 할인액 배지 — 강렬한 빨간 태그 (할인 강조)
-  if(fd.saving){
-    const stxt = fd.saving + ' 할인';
-    ctx.font = `900 28px "Noto Sans KR"`;
-    const sw = Math.min(ctx.measureText(stxt).width + 52, LW);
-    // 빨간 pill 배경
-    ctx.fillStyle = '#E53935';
-    roundRect(ctx, LX, y, sw, 60, 10); ctx.fill();
-    // 흰색 텍스트
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(stxt, LX+26, y+16);
-    y += 84;
-  }
-
-  /* ─────────────────────────────────────── */
-  // ⑥ 하단 콘텐츠 — 여백 채우기 (행사기간은 CTA 바에만 표시)
-  y = Math.max(y + 12, 720);  // 최소 y=720에서 시작
-
-  // 구분선
-  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
-  ctx.fillRect(LX, y, LW, 1.5);
-  y += 22;
-
-  // 추가 혜택 또는 기본 포인트 — 선명하게 (TC 전체 불투명 + 굵게)
-  if(fd.benefit){
-    ctx.fillStyle = TC;
-    ctx.font = `600 23px "Noto Sans KR"`;
-    const blines = splitLines(ctx, '✔  ' + fd.benefit, LW);
-    for(const ln of blines){ ctx.fillText(ln, LX, y); y += 38; }
-  } else {
-    ctx.fillStyle = TC;
-    ctx.font = `600 22px "Noto Sans KR"`;
-    ctx.fillText('✔ 빠른 당일 개통   ✔ 재고 최대 확보', LX, y);
-  }
-
-  /* ── 4. CTA 하단 풀와이드 바 (행사기간 중심) ── */
-  ctx.fillStyle = AC;
-  ctx.fillRect(0, 895, 1000, 105);
-  ctx.textBaseline = 'middle';
-
-  // CTA: 왼쪽 = 행사기간, 오른쪽 = 지금 바로 상담하세요! (군더더기 없이 2요소만)
-  if(fd.period){
-    // 왼쪽: 행사기간 라벨 (진하게)
-    ctx.fillStyle = 'rgba(10,22,40,0.80)';
-    ctx.font = `700 17px "Noto Sans KR"`;
-    ctx.fillText('행사기간', LX, 916);
-    // 날짜 — 더 크고 선명하게
-    ctx.fillStyle = '#0a1628';
-    ctx.font = `900 36px "Noto Sans KR"`;
-    ctx.fillText(fd.period, LX, 952);
-    // 오른쪽: 상담 CTA
-    ctx.fillStyle = '#0a1628';
-    ctx.font = `900 27px "Noto Sans KR"`;
-    ctx.textAlign = 'right';
-    ctx.fillText('지금 바로 상담하세요!', 960, 944);
-    ctx.textAlign = 'left';
-  } else {
-    // 행사기간 없으면 CTA만 중앙에
-    ctx.fillStyle = '#0a1628';
-    ctx.font = `900 30px "Noto Sans KR"`;
-    ctx.fillText('지금 바로 상담하세요!', LX, 947);
-  }
-
-  // 하단 캡션
-  ctx.fillStyle = 'rgba(10,22,40,0.40)';
-  ctx.font = `400 12px "Noto Sans KR"`;
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText('※ 이미지는 실물과 다를 수 있으며 행사 기간 및 조건에 따라 혜택이 변동될 수 있습니다.', LX, 990);
-}
-
-function ACCENT(style){
-  if(style==='premium') return '#D4AF37';
-  if(style==='bright')  return '#2563EB';
-  return '#FFE500';
-}
-
-function drawFallbackBg(ctx, style){
-  // 기본 그라디언트 (사선 방향으로 깊이감)
-  const g = ctx.createLinearGradient(0, 0, 650, 1000);
-  if(style==='bright'){
-    g.addColorStop(0,'#f0f7ff'); g.addColorStop(0.6,'#e6f1fc'); g.addColorStop(1,'#dce8f8');
-  } else if(style==='premium'){
-    g.addColorStop(0,'#080808'); g.addColorStop(0.5,'#110f1f'); g.addColorStop(1,'#0d0d1e');
-  } else {
-    g.addColorStop(0,'#050d1e'); g.addColorStop(0.45,'#091526'); g.addColorStop(1,'#071020');
-  }
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,1000,1000);
-
-  const AC = ACCENT(style);
-
-  // 우측 폰 영역 방사형 글로우 (제품 존 강조)
-  const rg = ctx.createRadialGradient(760,435,35, 760,435,370);
-  rg.addColorStop(0,`${AC}1C`);
-  rg.addColorStop(0.55,`${AC}0A`);
-  rg.addColorStop(1,'transparent');
-  ctx.fillStyle = rg;
-  ctx.fillRect(0,0,1000,1000);
-
-  // 좌하단 서브 앰비언트
-  const lg = ctx.createRadialGradient(90,910,5, 90,910,185);
-  lg.addColorStop(0,`${AC}12`); lg.addColorStop(1,'transparent');
-  ctx.fillStyle = lg;
-  ctx.fillRect(0,0,1000,1000);
-
-  // 대각선 텍스처 라인 (미세)
-  const lc = style==='bright' ? 'rgba(37,99,235,0.04)' : 'rgba(255,255,255,0.04)';
-  ctx.strokeStyle = lc; ctx.lineWidth = 1;
-  for(let i=-600; i<1600; i+=130){
-    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i+480,1000); ctx.stroke();
-  }
-}
-
-function roundRect(ctx,x,y,w,h,r){
-  ctx.beginPath();
-  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
-  ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
-  ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
-  ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
-  ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
-}
-
-/* 한국어 포함 텍스트 줄바꿈
-   ① 띄어쓰기(단어) 기준 우선 → ② 단어가 너무 길면 글자 단위 fallback */
-function splitLines(ctx, text, maxW){
-  const words = text.split(' ');
-  if(words.length > 1){
-    const lines = []; let cur = '';
-    for(const word of words){
-      const test = cur ? cur + ' ' + word : word;
-      if(ctx.measureText(test).width > maxW && cur !== ''){
-        lines.push(cur); cur = word;
-      } else { cur = test; }
-    }
-    if(cur) lines.push(cur);
-    return lines;
-  }
-  // 띄어쓰기 없는 텍스트 → 글자 단위 fallback
-  const lines = []; let cur = '';
-  for(const ch of text){
-    const t = cur + ch;
-    if(ctx.measureText(t).width > maxW && cur !== ''){
-      lines.push(cur); cur = ch;
-    } else { cur = t; }
-  }
-  if(cur) lines.push(cur);
-  return lines;
-}
-
-/* 원래가 → 할인가 할인율(%) 자동 계산 */
-function calcDiscPct(orig, disc){
-  const parse = s => {
-    const man = /만/.test(s) ? 10000 : 1;
-    const n = parseFloat(s.replace(/[^0-9.]/g,''));
-    return isNaN(n) ? 0 : n * man;
-  };
-  const o = parse(orig), d = parse(disc);
-  return (o > 0 && d > 0 && d < o) ? Math.round((o-d)/o*100) : 0;
-}
-
-function wrapText(ctx,text,x,y,maxW,lh){
-  const lines = splitLines(ctx,text,maxW);
-  lines.forEach((ln,i)=>ctx.fillText(ln,x,y+i*lh));
-}
-
-/* ════════════════════════════════════
-   SHOW MMS TEXT
-════════════════════════════════════ */
-function showMms(text){
-  document.getElementById('mmsText').textContent = text;
-  const len = text.length;
-  document.getElementById('charCount').textContent = `${len}자`;
-  document.getElementById('mmsBox').classList.add('show');
-}
-
-/* ════════════════════════════════════
-   COPY
-════════════════════════════════════ */
-function copyMms(){
-  navigator.clipboard.writeText(lastMms).then(()=>{
-    toast('문구가 클립보드에 복사되었습니다 ✓','success');
-  }).catch(()=>toast('복사 실패. 직접 드래그하여 복사해주세요','error'));
-}
-
-/* ════════════════════════════════════
-   DOWNLOAD JPG (1000×1000, <250KB)
-════════════════════════════════════ */
-function downloadJpg(){
-  const canvas = document.getElementById('previewCanvas');
-  let q = 0.90;
-  let url;
-  // 250KB 이하가 될 때까지 품질 감소
-  while(q >= 0.50){
-    url = canvas.toDataURL('image/jpeg', q);
-    const kb = Math.round((url.length - 'data:image/jpeg;base64,'.length) * 0.75 / 1024);
-    if (kb <= 250) break;
-    q = +(q - 0.05).toFixed(2);
-  }
-  const finalKb = Math.round((url.length - 'data:image/jpeg;base64,'.length) * 0.75 / 1024);
-
-  try {
-    const a = document.createElement('a');
-    const modelName = lastFormData?.model?.name || 'MMS';
-    a.download = `MMS_${modelName}_${Date.now()}.jpg`;
-    a.href = url;
-    a.click();
-    toast(`다운로드 완료 (${finalKb}KB, 품질 ${Math.round(q*100)}%) ✓`,'success');
-  } catch(e){
-    toast('다운로드 실패: canvas가 오염(tainted)되었습니다. 직접 업로드 이미지를 사용해주세요','error');
-  }
-}
+eval(atob("Y29uc3QgRklSRUJBU0VfQ09ORklHID0gewogYXBpS2V5OiAiQUl6YVN5RGZvb0p1WXZRRUt6c3BxUGVE+
+    "V3FIRVFQcDJ4a3hocFdBIiwKIGF1dGhEb21haW46ICJzZy1tbXMtZ2VuZXJhdG9yLmZpcmViYXNlYXBw+
+    "LmNvbSIsCiBwcm9qZWN0SWQ6ICJzZy1tbXMtZ2VuZXJhdG9yIiwKIHN0b3JhZ2VCdWNrZXQ6ICJzZy1t+
+    "bXMtZ2VuZXJhdG9yLmZpcmViYXNlc3RvcmFnZS5hcHAiLAogbWVzc2FnaW5nU2VuZGVySWQ6ICIxMDIy+
+    "MzMzMDU4NjMzIiwKIGFwcElkOiAiMToxMDIyMzMzMDU4NjMzOndlYjphODQ0ZThhNGY1Njk4NWE4NTI0+
+    "OTk4Igp9OwpsZXQgZmJBdXRoID0gbnVsbCwgZmJEYiA9IG51bGw7CmNvbnN0IEZCX1JFQURZID0gKGZ1+
+    "bmN0aW9uKCl7CiBpZiAoRklSRUJBU0VfQ09ORklHLmFwaUtleS5zdGFydHNXaXRoKCdGSUxMX0lOJykp+
+    "IHJldHVybiBmYWxzZTsgCiB0cnkgewogaWYgKCFmaXJlYmFzZS5hcHBzLmxlbmd0aCkgZmlyZWJhc2Uu+
+    "aW5pdGlhbGl6ZUFwcChGSVJFQkFTRV9DT05GSUcpOwogZmJBdXRoID0gZmlyZWJhc2UuYXV0aCgpOwog+
+    "ZmJEYiA9IGZpcmViYXNlLmZpcmVzdG9yZSgpOwogcmV0dXJuIHRydWU7CiB9IGNhdGNoKGUpeyBjb25z+
+    "b2xlLmVycm9yKCdGaXJlYmFzZSBcdWNkMDhcdWFlMzBcdWQ2NTQgXHVjNjI0XHViOTU4JywgZSk7IHJl+
+    "dHVybiBmYWxzZTsgfQp9KSgpOwppZiAoRkJfUkVBRFkpIHsKIGZiQXV0aC5vbkF1dGhTdGF0ZUNoYW5n+
+    "ZWQoYXN5bmMgKHVzZXIpID0+IHsKIGlmICghdXNlcil7IHNob3dBdXRoVGFiKCdsb2dpbicpOyByZXR1+
+    "cm47IH0KIHRyeSB7CiBjb25zdCBzbmFwID0gYXdhaXQgZmJEYi5jb2xsZWN0aW9uKCd1c2VycycpLmRv+
+    "Yyh1c2VyLnVpZCkuZ2V0KCk7CiBpZiAoc25hcC5leGlzdHMgJiYgc25hcC5kYXRhKCkuc3RhdHVzID09+
+    "PSAnYXBwcm92ZWQnKXsKIGNvbnN0IGQgPSBzbmFwLmRhdGEoKTsKIHNob3dBcHBDb250ZW50KGQubmFt+
+    "ZSB8fCB1c2VyLmVtYWlsLCBkLnN0b3JlIHx8ICcnKTsKIH0gZWxzZSB7CiBjb25zdCBuYW1lID0gc25h+
+    "cC5leGlzdHMgPyBzbmFwLmRhdGEoKS5uYW1lIDogdXNlci5lbWFpbDsKIHNob3dBdXRoU2NyZWVuKCdw+
+    "ZW5kaW5nJywgbmFtZSk7CiB9CiB9IGNhdGNoKGUpeyBjb25zb2xlLmVycm9yKGUpOyBzaG93QXV0aFRh+
+    "YignbG9naW4nKTsgfQogfSk7Cn0gZWxzZSB7CiBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnYXV0aE92+
+    "ZXJsYXknKS5jbGFzc0xpc3QuYWRkKCdoaWRkZW4nKTsKIGluaXRBcHAoKTsKfQpmdW5jdGlvbiBzaG93+
+    "QXV0aFRhYih0YWIpewogWydsb2dpbicsJ3NpZ251cCcsJ3BlbmRpbmcnXS5mb3JFYWNoKHMgPT4KIGRv+
+    "Y3VtZW50LmdldEVsZW1lbnRCeUlkKCdzY3JlZW4nK3MuY2hhckF0KDApLnRvVXBwZXJDYXNlKCkrcy5z+
+    "bGljZSgxKSkKIC5jbGFzc0xpc3QucmVtb3ZlKCdhY3RpdmUnKQogKTsKIGNvbnN0IHQgPSB0YWIgPT09+
+    "ICdsb2dpbicgPyAnTG9naW4nIDogdGFiID09PSAnc2lnbnVwJyA/ICdTaWdudXAnIDogJ1BlbmRpbmcn+
+    "OwogZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3NjcmVlbicrdCkuY2xhc3NMaXN0LmFkZCgnYWN0aXZl+
+    "Jyk7Cn0KZnVuY3Rpb24gc2hvd0F1dGhTY3JlZW4od2hpY2gsIG5hbWUpewogaWYgKHdoaWNoID09PSAn+
+    "cGVuZGluZycpewogc2hvd0F1dGhUYWIoJ3BlbmRpbmcnKTsKIGlmIChuYW1lKSBkb2N1bWVudC5nZXRF+
+    "bGVtZW50QnlJZCgncGVuZGluZ0Rlc2MnKS5pbm5lckhUTUwgPQogYDxzdHJvbmc+JHtuYW1lfTwvc3Ry+
+    "b25nPuuLmOydmCDqsIDsnoUg7Iug7LKt7J20IOyZhOujjOuQmOyXiOyKteuLiOuLpC48YnI+6rSA66as+
+    "7J6Q6rCAIO2ZleyduCDtm4Qg7Iq57J247ZW0IOuTnOumveuLiOuLpC5gOwogfQp9CmZ1bmN0aW9uIHNo+
+    "b3dBcHBDb250ZW50KG5hbWUsIHN0b3JlKXsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdhdXRoT3Zl+
+    "cmxheScpLmNsYXNzTGlzdC5hZGQoJ2hpZGRlbicpOwogZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ2Fw+
+    "cEhlYWRlcicpLnN0eWxlLmRpc3BsYXkgPSAnJzsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdhcHBN+
+    "YWluJykuc3R5bGUuZGlzcGxheSA9ICcnOwogY29uc3QgY2hpcCA9IGRvY3VtZW50LmdldEVsZW1lbnRC+
+    "eUlkKCdhdXRoVXNlckNoaXAnKTsKIGNvbnN0IGxvID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ2J0+
+    "bkxvZ291dCcpOwogY2hpcC50ZXh0Q29udGVudCA9IHN0b3JlID8gYCR7bmFtZX0gwrcgJHtzdG9yZX1g+
+    "IDogbmFtZTsKIGNoaXAuc3R5bGUuZGlzcGxheSA9ICcnOwogbG8uc3R5bGUuZGlzcGxheSA9ICcnOwog+
+    "aW5pdEFwcCgpOwp9CmZ1bmN0aW9uIGF1dGhMb2dvdXQoKXsKIGlmIChmYkF1dGgpIGZiQXV0aC5zaWdu+
+    "T3V0KCkuY2F0Y2goKCk9Pnt9KTsKIGxvY2F0aW9uLnJlbG9hZCgpOwp9CmFzeW5jIGZ1bmN0aW9uIGF1+
+    "dGhTaWdudXAoKXsKIGNvbnN0IG5hbWUgPSAoZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3NpZ251cE5h+
+    "bWUnKS52YWx1ZSB8fCAnJykudHJpbSgpOwogY29uc3Qgc3RvcmUgPSAoZG9jdW1lbnQuZ2V0RWxlbWVu+
+    "dEJ5SWQoJ3NpZ251cFN0b3JlJykudmFsdWUgfHwgJycpLnRyaW0oKTsKIGNvbnN0IGVtYWlsID0gKGRv+
+    "Y3VtZW50LmdldEVsZW1lbnRCeUlkKCdzaWdudXBFbWFpbCcpLnZhbHVlIHx8ICcnKS50cmltKCk7CiBj+
+    "b25zdCBwdyA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdzaWdudXBQdycpLnZhbHVlOwogY29uc3Qg+
+    "bXNnID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3NpZ251cE1zZycpOwogaWYgKCFuYW1lIHx8ICFl+
+    "bWFpbCB8fCAhcHcpeyBzZXRBdXRoTXNnKCdzaWdudXBNc2cnLCdcdWJhYThcdWI0ZTAgXHVkNTZkXHVi+
+    "YWE5XHVjNzQ0IFx1Yzc4NVx1YjgyNVx1ZDU3NFx1YzhmY1x1YzEzOFx1YzY5NCcsJ2VycicpOyByZXR1+
+    "cm47IH0KIGlmIChwdy5sZW5ndGggPCA2KXsgc2V0QXV0aE1zZygnc2lnbnVwTXNnJywnXHViZTQ0XHVi+
+    "YzAwXHViYzg4XHVkNjM4XHViMjk0IDZcdWM3OTAgXHVjNzc0XHVjMGMxXHVjNzc0XHVjNWI0XHVjNTdj+
+    "IFx1ZDU2OVx1YjJjOFx1YjJlNCcsJ2VycicpOyByZXR1cm47IH0KIHNldEJ0bkxvYWRpbmcoJ3NpZ251+
+    "cEJ0bicsIHRydWUpOwogdHJ5IHsKIGNvbnN0IGNyZWQgPSBhd2FpdCBmYkF1dGguY3JlYXRlVXNlcldp+
+    "dGhFbWFpbEFuZFBhc3N3b3JkKGVtYWlsLCBwdyk7CiBhd2FpdCBmYkRiLmNvbGxlY3Rpb24oJ3VzZXJz+
+    "JykuZG9jKGNyZWQudXNlci51aWQpLnNldCh7CiBuYW1lLCBzdG9yZSwgZW1haWwsIHN0YXR1czogJ3Bl+
+    "bmRpbmcnLAogY3JlYXRlZEF0OiBmaXJlYmFzZS5maXJlc3RvcmUuRmllbGRWYWx1ZS5zZXJ2ZXJUaW1l+
+    "c3RhbXAoKQogfSk7CiBzaG93QXV0aFNjcmVlbigncGVuZGluZycsIG5hbWUpOwogfSBjYXRjaChlKXsg+
+    "c2V0QXV0aE1zZygnc2lnbnVwTXNnJywgcGFyc2VGaXJlYmFzZUVycihlKSwgJ2VycicpOyB9CiBmaW5h+
+    "bGx5IHsgc2V0QnRuTG9hZGluZygnc2lnbnVwQnRuJywgZmFsc2UpOyB9Cn0KYXN5bmMgZnVuY3Rpb24g+
+    "YXV0aExvZ2luKCl7CiBjb25zdCBlbWFpbCA9IChkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnbG9naW5F+
+    "bWFpbCcpLnZhbHVlIHx8ICcnKS50cmltKCk7CiBjb25zdCBwdyA9IGRvY3VtZW50LmdldEVsZW1lbnRC+
+    "eUlkKCdsb2dpblB3JykudmFsdWU7CiBpZiAoIWVtYWlsIHx8ICFwdyl7IHNldEF1dGhNc2coJ2xvZ2lu+
+    "TXNnJywnXHVjNzc0XHViYTU0XHVjNzdjXHVhY2ZjIFx1YmU0NFx1YmMwMFx1YmM4OFx1ZDYzOFx1Yjk3+
+    "YyBcdWM3ODVcdWI4MjVcdWQ1NzRcdWM4ZmNcdWMxMzhcdWM2OTQnLCdlcnInKTsgcmV0dXJuOyB9CiBz+
+    "ZXRCdG5Mb2FkaW5nKCdsb2dpbkJ0bicsIHRydWUpOwogdHJ5IHsKIGF3YWl0IGZiQXV0aC5zaWduSW5X+
+    "aXRoRW1haWxBbmRQYXNzd29yZChlbWFpbCwgcHcpOwogfSBjYXRjaChlKXsgc2V0QXV0aE1zZygnbG9n+
+    "aW5Nc2cnLCBwYXJzZUZpcmViYXNlRXJyKGUpLCAnZXJyJyk7IH0KIGZpbmFsbHkgeyBzZXRCdG5Mb2Fk+
+    "aW5nKCdsb2dpbkJ0bicsIGZhbHNlKTsgfQp9CmZ1bmN0aW9uIHNldEF1dGhNc2coaWQsIHRleHQsIGNs+
+    "cyl7CiBjb25zdCBlbCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKGlkKTsKIGVsLnRleHRDb250ZW50+
+    "ID0gdGV4dDsgZWwuY2xhc3NOYW1lID0gJ2F1dGgtbXNnICcgKyAoY2xzIHx8ICcnKTsKfQpmdW5jdGlv+
+    "biBzZXRCdG5Mb2FkaW5nKGlkLCBvbil7CiBjb25zdCBiID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQo+
+    "aWQpOwogYi5kaXNhYmxlZCA9IG9uOyBiLnRleHRDb250ZW50ID0gb24gPyAnXHVjYzk4XHViOWFjIFx1+
+    "YzkxMS4uLicgOiAoaWQuaW5jbHVkZXMoJ2xvZ2luJykgPyAnXHViODVjXHVhZGY4XHVjNzc4JyA6ICdc+
+    "dWFjMDBcdWM3ODUgXHVjMmUwXHVjY2FkJyk7Cn0KZnVuY3Rpb24gcGFyc2VGaXJlYmFzZUVycihlKXsK+
+    "IGNvbnN0IGMgPSBlLmNvZGUgfHwgJyc7CiBpZiAoYy5pbmNsdWRlcygnZW1haWwtYWxyZWFkeS1pbi11+
+    "c2UnKSkgcmV0dXJuICdcdWM3NzRcdWJiZjggXHVhYzAwXHVjNzg1XHViNDFjIFx1Yzc3NFx1YmE1NFx1+
+    "Yzc3Y1x1Yzc4NVx1YjJjOFx1YjJlNCc7CiBpZiAoYy5pbmNsdWRlcygnd3JvbmctcGFzc3dvcmQnKSB8+
+    "fCBjLmluY2x1ZGVzKCdpbnZhbGlkLWNyZWRlbnRpYWwnKSkgcmV0dXJuICdcdWM3NzRcdWJhNTRcdWM3+
+    "N2MgXHViNjEwXHViMjk0IFx1YmU0NFx1YmMwMFx1YmM4OFx1ZDYzOFx1YWMwMCBcdWQyYzBcdWI4Mzhc+
+    "dWMyYjVcdWIyYzhcdWIyZTQnOwogaWYgKGMuaW5jbHVkZXMoJ3VzZXItbm90LWZvdW5kJykpIHJldHVy+
+    "biAnXHViNGYxXHViODVkXHViNDE4XHVjOWMwIFx1YzU0YVx1Yzc0MCBcdWM3NzRcdWJhNTRcdWM3N2Nc+
+    "dWM3ODVcdWIyYzhcdWIyZTQnOwogaWYgKGMuaW5jbHVkZXMoJ3dlYWstcGFzc3dvcmQnKSkgcmV0dXJu+
+    "ICdcdWJlNDRcdWJjMDBcdWJjODhcdWQ2MzhcdWIyOTQgNlx1Yzc5MCBcdWM3NzRcdWMwYzFcdWM3NzRc+
+    "dWM1YjRcdWM1N2MgXHVkNTY5XHViMmM4XHViMmU0JzsKIGlmIChjLmluY2x1ZGVzKCdpbnZhbGlkLWVt+
+    "YWlsJykpIHJldHVybiAnXHVjNjJjXHViYzE0XHViOTc4IFx1Yzc3NFx1YmE1NFx1Yzc3YyBcdWQ2MTVc+
+    "dWMyZGRcdWM3NzQgXHVjNTQ0XHViMmQ5XHViMmM4XHViMmU0JzsKIGlmIChjLmluY2x1ZGVzKCd0b28t+
+    "bWFueS1yZXF1ZXN0cycpKXJldHVybiAnXHVjN2EwXHVjMmRjIFx1ZDZjNCBcdWIyZTRcdWMyZGMgXHVj+
+    "MmRjXHViM2M0XHVkNTc0XHVjOGZjXHVjMTM4XHVjNjk0JzsKIHJldHVybiBlLm1lc3NhZ2UgfHwgJ1x1+
+    "YzYyNFx1Yjk1OFx1YWMwMCBcdWJjMWNcdWMwZGRcdWQ1ODhcdWMyYjVcdWIyYzhcdWIyZTQnOwp9Cmxl+
+    "dCBjYWNoZWRNb2RlbExpc3QgPSBudWxsOyAKY29uc3QgRkFMTEJBQ0tfTU9ERUxTID0gWwogeyBpZDon+
+    "Z2VtaW5pLTIuMC1mbGFzaCcsIHZlcnNpb246J3YxYmV0YScgfSwKIHsgaWQ6J2dlbWluaS0yLjAtZmxh+
+    "c2gtbGl0ZScsIHZlcnNpb246J3YxYmV0YScgfSwKIHsgaWQ6J2dlbWluaS0yLjUtZmxhc2gtcHJldmll+
+    "dy0wNC0xNycsIHZlcnNpb246J3YxYmV0YScgfSwKIHsgaWQ6J2dlbWluaS0xLjUtZmxhc2gnLCB2ZXJz+
+    "aW9uOid2MWJldGEnIH0sCiB7IGlkOidnZW1pbmktMS41LWZsYXNoLThiJywgdmVyc2lvbjondjFiZXRh+
+    "JyB9LAogeyBpZDonZ2VtaW5pLTEuNS1wcm8nLCB2ZXJzaW9uOid2MWJldGEnIH0sCiB7IGlkOidnZW1p+
+    "bmktMi4wLWZsYXNoJywgdmVyc2lvbjondjEnIH0sCiB7IGlkOidnZW1pbmktMS41LWZsYXNoJywgdmVy+
+    "c2lvbjondjEnIH0sCl07CmFzeW5jIGZ1bmN0aW9uIGRpc2NvdmVyTW9kZWxzKGZvcmNlS2V5KSB7CiBj+
+    "b25zdCBrZXkgPSBmb3JjZUtleSB8fCBhcGlLZXk7CiBpZiAoIWZvcmNlS2V5ICYmIGNhY2hlZE1vZGVs+
+    "TGlzdCkgcmV0dXJuIGNhY2hlZE1vZGVsTGlzdDsKIGZvciAoY29uc3QgdmVyIG9mIFsndjEnLCAndjFi+
+    "ZXRhJ10pIHsKIHRyeSB7CiBjb25zdCByZXMgPSBhd2FpdCBhcGlGZXRjaCgKIGBodHRwczovL2dlbmVy+
+    "YXRpdmVsYW5ndWFnZS5nb29nbGVhcGlzLmNvbS8ke3Zlcn0vbW9kZWxzP2tleT0ke2tleX1gLAogeyBt+
+    "ZXRob2Q6ICdHRVQnIH0KICk7CiBpZiAoIXJlcy5vaykgewogY29uc3QgZSA9IGF3YWl0IHJlcy5qc29u+
+    "KCkuY2F0Y2goKCk9Pih7fSkpOwogaWYgKHJlcy5zdGF0dXMgPT09IDQwMSB8fCByZXMuc3RhdHVzID09+
+    "PSA0MDMpCiB0aHJvdyBuZXcgRXJyb3IoJ0FQSSBcdWQwYTQgXHVjNjI0XHViOTU4ICcgKyByZXMuc3Rh+
+    "dHVzICsgJzogJyArIChlLmVycm9yPy5tZXNzYWdlIHx8ICdcdWFkOGNcdWQ1NWMgXHVjNWM2XHVjNzRj+
+    "JykpOwogY29udGludWU7CiB9CiBjb25zdCBkYXRhID0gYXdhaXQgcmVzLmpzb24oKTsKIGNvbnN0IGxp+
+    "c3QgPSAoZGF0YS5tb2RlbHMgfHwgW10pCiAuZmlsdGVyKG0gPT4gKG0uc3VwcG9ydGVkR2VuZXJhdGlv+
+    "bk1ldGhvZHMgfHwgW10pLmluY2x1ZGVzKCdnZW5lcmF0ZUNvbnRlbnQnKSkKIC5tYXAobSA9PiAoeyBp+
+    "ZDogbS5uYW1lLnJlcGxhY2UoJ21vZGVscy8nLCAnJyksIHZlcnNpb246IHZlciB9KSkKIC5maWx0ZXIo+
+    "bSA9PiBtLmlkLnRvTG93ZXJDYXNlKCkuaW5jbHVkZXMoJ2dlbWluaScpICYmICFtLmlkLmluY2x1ZGVz+
+    "KCd2aXNpb24nKSk7CiBpZiAobGlzdC5sZW5ndGggPiAwKSB7CiBsaXN0LnNvcnQoKGEsIGIpID0+IHsK+
+    "IGNvbnN0IHJhbmsgPSBpZCA9PgogaWQuaW5jbHVkZXMoJzIuMC1mbGFzaCcpID8gMCA6CiBpZC5pbmNs+
+    "dWRlcygnZmxhc2gnKSA/IDEgOgogaWQuaW5jbHVkZXMoJ3BybycpID8gMiA6IDM7CiByZXR1cm4gcmFu+
+    "ayhhLmlkKSAtIHJhbmsoYi5pZCk7CiB9KTsKIGlmICghZm9yY2VLZXkpIGNhY2hlZE1vZGVsTGlzdCA9+
+    "IGxpc3Q7CiByZXR1cm4gbGlzdDsKIH0KIH0gY2F0Y2goZSkgewogaWYgKGUubWVzc2FnZS5pbmNsdWRl+
+    "cygnQVBJIFx1ZDBhNCBcdWM2MjRcdWI5NTgnKSkgdGhyb3cgZTsKIGNvbnNvbGUud2FybihgTGlzdE1v+
+    "ZGVscyAke3Zlcn0g7Iuk7YyoOmAsIGUubWVzc2FnZSk7CiB9CiB9CiByZXR1cm4gbnVsbDsKfQpjb25z+
+    "dCBDT1JTX1BST1hZID0gJ2h0dHBzOi8vY29yc3Byb3h5LmlvLz91cmw9JzsKYXN5bmMgZnVuY3Rpb24g+
+    "YXBpRmV0Y2godXJsLCBvcHRpb25zLCB0aW1lb3V0TXMgPSAyMDAwMCkgewogY29uc3QgY29udHJvbGxl+
+    "ciA9IG5ldyBBYm9ydENvbnRyb2xsZXIoKTsKIGNvbnN0IHRpbWVyID0gc2V0VGltZW91dCgoKSA9PiBj+
+    "b250cm9sbGVyLmFib3J0KCksIHRpbWVvdXRNcyk7CiBjb25zdCBvcHRzID0geyAuLi5vcHRpb25zLCBz+
+    "aWduYWw6IGNvbnRyb2xsZXIuc2lnbmFsIH07CiB0cnkgewogY29uc3QgcmVzID0gYXdhaXQgZmV0Y2go+
+    "dXJsLCBvcHRzKTsKIGNsZWFyVGltZW91dCh0aW1lcik7CiByZXR1cm4gcmVzOwogfSBjYXRjaChlMSkg+
+    "ewogY29uc3QgbXNnID0gZTEubWVzc2FnZSB8fCAnJzsKIGlmIChtc2cuaW5jbHVkZXMoJ2Fib3J0Jykg+
+    "fHwgbXNnLmluY2x1ZGVzKCdBYm9ydEVycm9yJykpIHRocm93IGUxOwogY29uc29sZS53YXJuKCdcdWM5+
+    "YzFcdWM4MTEgXHVkNjM4XHVjZDljIFx1YzJlNFx1ZDMyOCwgQ09SUyBcdWQ1MDRcdWI4NWRcdWMyZGMg+
+    "XHVjMmRjXHViM2M0OicsIG1zZyk7CiB9CiB0cnkgewogY29uc3QgcHJveHlVcmwgPSBDT1JTX1BST1hZ+
+    "ICsgZW5jb2RlVVJJQ29tcG9uZW50KHVybCk7CiBjb25zdCBjb250cm9sbGVyMiA9IG5ldyBBYm9ydENv+
+    "bnRyb2xsZXIoKTsKIGNvbnN0IHRpbWVyMiA9IHNldFRpbWVvdXQoKCkgPT4gY29udHJvbGxlcjIuYWJv+
+    "cnQoKSwgdGltZW91dE1zKTsKIGNvbnN0IHJlcyA9IGF3YWl0IGZldGNoKHByb3h5VXJsLCB7IC4uLm9w+
+    "dGlvbnMsIHNpZ25hbDogY29udHJvbGxlcjIuc2lnbmFsIH0pOwogY2xlYXJUaW1lb3V0KHRpbWVyMik7+
+    "CiBjbGVhclRpbWVvdXQodGltZXIpOwogY29uc29sZS5sb2coJ0NPUlMgXHVkNTA0XHViODVkXHVjMmRj+
+    "XHViODVjIFx1YzVmMFx1YWNiMCBcdWMxMzFcdWFjZjUnKTsKIHJldHVybiByZXM7CiB9IGNhdGNoKGUy+
+    "KSB7CiBjbGVhclRpbWVvdXQodGltZXIpOwogdGhyb3cgbmV3IEVycm9yKCdBUEkgXHVjNWYwXHVhY2Iw+
+    "IFx1YzJlNFx1ZDMyOCAoXHVjOWMxXHVjODExXHUwMGI3XHVkNTA0XHViODVkXHVjMmRjIFx1YmFhOFx1+
+    "YjQ1MCBcdWNjMjhcdWIyZTgpLlxuXG5cdTFmNGExIFx1ZDU3NFx1YWNiMFx1YmMyOVx1YmM5NTpcblx1+
+    "MjQ2MCBcdTMwMGNBSSBcdWM1YzZcdWM3NzQgXHVkMTVjXHVkNTBjXHViOWJmIFx1YzBkZFx1YzEzMVx1+
+    "MzAwZCBcdWNjYjRcdWQwNmMgXHVkNmM0IFx1YzdhY1x1YzJkY1x1YjNjNFxuXHUyNDYxIHB5dGhvbjMg+
+    "LW0gaHR0cC5zZXJ2ZXIgODA4MCBcdWMyZTRcdWQ1ODkgXHVkNmM0IGxvY2FsaG9zdFx1Yjg1YyBcdWM4+
+    "MTFcdWMxOGQnKTsKIH0KfQpjb25zdCBNT0RFTFMgPSB7CiBzYW1zdW5nOiBbCiB7IGlkOidzMjZ1bHRy+
+    "YScsIG5hbWU6J1x1YWMyNFx1YjdlZFx1YzJkYyBTMjYgXHVjNmI4XHVkMmI4XHViNzdjJywKIGltZzon+
+    "aHR0cHM6Ly9pbWFnZXMuc2Ftc3VuZy5jb20va2RwL2dvb2RzLzIwMjYvMDEvMzAvYjNhNThmMjItM2Ex+
+    "OS00YzIwLTkzZDItZDg0NjcwZTJlMjMzLnBuZycgfSwKIHsgaWQ6J3MyNnBsdXMnLCBuYW1lOidcdWFj+
+    "MjRcdWI3ZWRcdWMyZGMgUzI2KycsCiBpbWc6J2h0dHBzOi8vaW1hZ2VzLnNhbXN1bmcuY29tL2tkcC9n+
+    "b29kcy8yMDI2LzAxLzI5LzhhMDQ4MzE5LWVmOWQtNGMxYS1hYTM1LWNlMGUyYjZkNGMxNS5wbmcnIH0s+
+    "CiB7IGlkOidzMjYnLCBuYW1lOidcdWFjMjRcdWI3ZWRcdWMyZGMgUzI2JywKIGltZzonaHR0cHM6Ly9p+
+    "bWFnZXMuc2Ftc3VuZy5jb20va2RwL2dvb2RzLzIwMjYvMDEvMjkvZDY3NTU3YjctNGQxZS00YTkxLTll+
+    "MGUtZWI1ZWJhY2MwZjcxLnBuZycgfSwKIHsgaWQ6J3p0cmknLCBuYW1lOidcdWFjMjRcdWI3ZWRcdWMy+
+    "ZGMgWiBcdWQyYjhcdWI3N2NcdWM3NzRcdWQzZjRcdWI0ZGMnLAogaW1nOidodHRwczovL2ltYWdlcy5z+
+    "YW1zdW5nLmNvbS9rZHAvZ29vZHMvMjAyNS8xMS8yNy8yOWZmMTE4OC1mZmJhLTQ4MzktYTM3Zi1kNDU3+
+    "NDQ4MWEwMjMucG5nJyB9LAogeyBpZDonemZvbGQ3JywgbmFtZTonXHVhYzI0XHViN2VkXHVjMmRjIFog+
+    "XHVkM2Y0XHViNGRjNycsCiBpbWc6J2h0dHBzOi8vaW1hZ2VzLnNhbXN1bmcuY29tL2tkcC9nb29kcy8y+
+    "MDI1LzA3LzAzLzJhZjI1MzNiLTQzMDktNDMxYS05MmI4LTczZDc1MTM0NTRhMS5wbmcnIH0sCiB7IGlk+
+    "OidzMjV1bHRyYScsIG5hbWU6J1x1YWMyNFx1YjdlZFx1YzJkYyBTMjUgXHVjNmI4XHVkMmI4XHViNzdj+
+    "JywKIGltZzonaHR0cHM6Ly9pbWFnZXMuc2Ftc3VuZy5jb20vaXMvaW1hZ2Uvc2Ftc3VuZy9wNnBpbS9z+
+    "ZWMvMjUwMS9nYWxsZXJ5L3NlYy1nYWxheHktczI1LXVsdHJhLXM5Mzgtc20tczkzOG56a2Frb28tdGh1+
+    "bWItNTQ0MjYyNTE3PyQ0ODBfNDgwX1BORyQnIH0sCiB7IGlkOidzMjVwbHVzJywgbmFtZTonXHVhYzI0+
+    "XHViN2VkXHVjMmRjIFMyNSsnLAogaW1nOidodHRwczovL2ltYWdlcy5zYW1zdW5nLmNvbS9pcy9pbWFn+
+    "ZS9zYW1zdW5nL3A2cGltL3NlYy8yNTAxL2dhbGxlcnkvc2VjLWdhbGF4eS1zMjUtcGx1cy1zOTM2LXNt+
+    "LXM5MzZuemJha29vLXRodW1iLTU0NDI1ODU0Nz8kNDgwXzQ4MF9QTkckJyB9LAogeyBpZDonczI1Jywg+
+    "bmFtZTonXHVhYzI0XHViN2VkXHVjMmRjIFMyNScsCiBpbWc6J2h0dHBzOi8vaW1hZ2VzLnNhbXN1bmcu+
+    "Y29tL2lzL2ltYWdlL3NhbXN1bmcvcDZwaW0vc2VjLzI1MDEvZ2FsbGVyeS9zZWMtZ2FsYXh5LXMyNS1z+
+    "OTMxLXNtLXM5MzFuemJha29vLXRodW1iLTU0NDI1NTExNz8kNDgwXzQ4MF9QTkckJyB9LAogeyBpZDon+
+    "czI1ZmUnLCBuYW1lOidcdWFjMjRcdWI3ZWRcdWMyZGMgUzI1IEZFJywKIGltZzonaHR0cHM6Ly9pbWFn+
+    "ZXMuc2Ftc3VuZy5jb20vaXMvaW1hZ2Uvc2Ftc3VuZy9wNnBpbS9zZWMvMjUwNi9nYWxsZXJ5L3NlYy1n+
+    "YWxheHktczI1ZmUtczczMS1zbS1zNzMxbmJnYWtvby10aHVtYj8kNDgwXzQ4MF9QTkckJyB9LAogXSwK+
+    "IGFwcGxlOiBbCiB7IGlkOidpMTdwcm9tYXgnLCBuYW1lOidpUGhvbmUgMTcgUHJvIE1heCcsCiBpbWc6+
+    "J2h0dHBzOi8vc3RvcmUuc3RvcmVpbWFnZXMuY2RuLWFwcGxlLmNvbS8xL2FzLWltYWdlcy5hcHBsZS5j+
+    "b20vaXMvaXBob25lLWNhcmQtNDAtMTdwcm8tMjAyNTA5P3dpZD02MDAmaGVpPTYwMCZmbXQ9cG5nLWFs+
+    "cGhhJi52PTEnIH0sCiB7IGlkOidpMTdwcm8nLCBuYW1lOidpUGhvbmUgMTcgUHJvJywKIGltZzonaHR0+
+    "cHM6Ly9zdG9yZS5zdG9yZWltYWdlcy5jZG4tYXBwbGUuY29tLzEvYXMtaW1hZ2VzLmFwcGxlLmNvbS9p+
+    "cy9pcGhvbmUtY2FyZC00MC0xN3Byby0yMDI1MDk/d2lkPTYwMCZoZWk9NjAwJmZtdD1wbmctYWxwaGEm+
+    "LnY9MScgfSwKIHsgaWQ6J2lhaXInLCBuYW1lOidpUGhvbmUgQWlyJywKIGltZzonaHR0cHM6Ly9zdG9y+
+    "ZS5zdG9yZWltYWdlcy5jZG4tYXBwbGUuY29tLzEvYXMtaW1hZ2VzLmFwcGxlLmNvbS9pcy9pcGhvbmUt+
+    "Y2FyZC00MC0xN2Fpci0yMDI1MDk/d2lkPTYwMCZoZWk9NjAwJmZtdD1wbmctYWxwaGEmLnY9MScgfSwK+
+    "IHsgaWQ6J2kxNycsIG5hbWU6J2lQaG9uZSAxNycsCiBpbWc6J2h0dHBzOi8vc3RvcmUuc3RvcmVpbWFn+
+    "ZXMuY2RuLWFwcGxlLmNvbS8xL2FzLWltYWdlcy5hcHBsZS5jb20vaXMvaXBob25lLWNhcmQtNDAtMTct+
+    "MjAyNTA5P3dpZD02MDAmaGVpPTYwMCZmbXQ9cG5nLWFscGhhJi52PTEnIH0sCiB7IGlkOidpMTdlJywg+
+    "bmFtZTonaVBob25lIDE3ZScsCiBpbWc6J2h0dHBzOi8vc3RvcmUuc3RvcmVpbWFnZXMuY2RuLWFwcGxl+
+    "LmNvbS8xL2FzLWltYWdlcy5hcHBsZS5jb20vaXMvaXBob25lLWNhcmQtNDAtMTdlLTIwMjYwMz93aWQ9+
+    "NjAwJmhlaT02MDAmZm10PXBuZy1hbHBoYSYudj0xJyB9LAogeyBpZDonaTE2cHJvbWF4JywgbmFtZTon+
+    "aVBob25lIDE2IFBybyBNYXgnLAogaW1nOidodHRwczovL3N0b3JlLnN0b3JlaW1hZ2VzLmNkbi1hcHBs+
+    "ZS5jb20vMS9hcy1pbWFnZXMuYXBwbGUuY29tL2lzL2lwaG9uZS1jYXJkLTQwLTE2cHJvLTIwMjQwOT93+
+    "aWQ9NjAwJmhlaT02MDAmZm10PXBuZy1hbHBoYSYudj0xJyB9LAogeyBpZDonaTE2cHJvJywgbmFtZTon+
+    "aVBob25lIDE2IFBybycsCiBpbWc6J2h0dHBzOi8vc3RvcmUuc3RvcmVpbWFnZXMuY2RuLWFwcGxlLmNv+
+    "bS8xL2FzLWltYWdlcy5hcHBsZS5jb20vaXMvaXBob25lLWNhcmQtNDAtMTZwcm8tMjAyNDA5P3dpZD02+
+    "MDAmaGVpPTYwMCZmbXQ9cG5nLWFscGhhJi52PTEnIH0sCiB7IGlkOidpMTYnLCBuYW1lOidpUGhvbmUg+
+    "MTYnLAogaW1nOidodHRwczovL3N0b3JlLnN0b3JlaW1hZ2VzLmNkbi1hcHBsZS5jb20vMS9hcy1pbWFn+
+    "ZXMuYXBwbGUuY29tL2lzL2lwaG9uZS1jYXJkLTQwLTE2cGx1cy0yMDI1MDk/d2lkPTYwMCZoZWk9NjAw+
+    "JmZtdD1wbmctYWxwaGEmLnY9MScgfSwKIF0KfTsKbGV0IGFwaUtleSA9IGxvY2FsU3RvcmFnZS5nZXRJ+
+    "dGVtKCdnZW1pbmlfa2V5JykgfHwgJyc7CmxldCBicmFuZCA9ICdzYW1zdW5nJzsKbGV0IHRhcmdldHMg+
+    "PSBbXTsKbGV0IGltZ1N0eWxlID0gJ2RhcmsnOwpsZXQgY3VzdG9tSW1nID0gbnVsbDsgCmxldCBsYXN0+
+    "TW1zID0gJyc7CmxldCBpc1J1bm5pbmcgPSBmYWxzZTsKbGV0IGxhc3RGb3JtRGF0YSA9IG51bGw7CmZ1+
+    "bmN0aW9uIGluaXRBcHAoKXsKIGJ1aWxkTW9kZWxMaXN0KCdzYW1zdW5nJyk7CiBkb2N1bWVudC5xdWVy+
+    "eVNlbGVjdG9yQWxsKCcudGFnJykuZm9yRWFjaCh0ID0+CiB0LmFkZEV2ZW50TGlzdGVuZXIoJ2NsaWNr+
+    "JywgKCkgPT4gewogdC5jbGFzc0xpc3QudG9nZ2xlKCdhY3RpdmUnKTsKIGNvbnN0IHYgPSB0LmRhdGFz+
+    "ZXQudjsKIHRhcmdldHMgPSB0YXJnZXRzLmluY2x1ZGVzKHYpID8gdGFyZ2V0cy5maWx0ZXIoeD0+eCE9+
+    "PXYpIDogWy4uLnRhcmdldHMsIHZdOwogfSkKICk7CiBpZiAobG9jYXRpb24ucHJvdG9jb2wgPT09ICdm+
+    "aWxlOicpIHsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdwcm90b0Jhbm5lcicpLmNsYXNzTGlzdC5h+
+    "ZGQoJ3Nob3cnKTsKIH0KIGlmICghYXBpS2V5KSBvcGVuU2V0dGluZ3MoKTsKfQpmdW5jdGlvbiBvcGVu+
+    "U2V0dGluZ3MoKXsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdpbnB1dEFwaUtleScpLnZhbHVlID0g+
+    "YXBpS2V5OwogZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ21vZGFsU2V0dGluZ3MnKS5jbGFzc0xpc3Qu+
+    "YWRkKCdzaG93Jyk7Cn0KZnVuY3Rpb24gY2xvc2VTZXR0aW5ncygpeyBkb2N1bWVudC5nZXRFbGVtZW50+
+    "QnlJZCgnbW9kYWxTZXR0aW5ncycpLmNsYXNzTGlzdC5yZW1vdmUoJ3Nob3cnKTsgfQpmdW5jdGlvbiBz+
+    "YXZlU2V0dGluZ3MoKXsKIGNvbnN0IHYgPSBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnaW5wdXRBcGlL+
+    "ZXknKS52YWx1ZS50cmltKCk7CiBpZiAoIXYpeyB0b2FzdCgnQVBJIFx1ZDBhNFx1Yjk3YyBcdWM3ODVc+
+    "dWI4MjVcdWQ1NzRcdWM4ZmNcdWMxMzhcdWM2OTQnLCdlcnJvcicpOyByZXR1cm47IH0KIGlmICghdi5z+
+    "dGFydHNXaXRoKCdBSXphJykpeyB0b2FzdCgnQVBJIFx1ZDBhNFx1YWMwMCBcdWM2MmNcdWJjMTRcdWI5+
+    "NzRcdWM5YzAgXHVjNTRhXHVjMmI1XHViMmM4XHViMmU0LiBBSXphU3kuLi5cdWI4NWMgXHVjMmRjXHVj+
+    "NzkxXHVkNTc0XHVjNTdjIFx1ZDU2OVx1YjJjOFx1YjJlNCcsJ2Vycm9yJyk7IHJldHVybjsgfQogYXBp+
+    "S2V5ID0gdjsKIGxvY2FsU3RvcmFnZS5zZXRJdGVtKCdnZW1pbmlfa2V5JywgYXBpS2V5KTsKIGNsb3Nl+
+    "U2V0dGluZ3MoKTsKIHRvYXN0KCdBUEkgXHVkMGE0XHVhYzAwIFx1YzgwMFx1YzdhNVx1YjQxOFx1YzVj+
+    "OFx1YzJiNVx1YjJjOFx1YjJlNCBcdTI3MTMnLCdzdWNjZXNzJyk7Cn0KZG9jdW1lbnQuZ2V0RWxlbWVu+
+    "dEJ5SWQoJ2J0blNldHRpbmdzJykub25jbGljayA9IG9wZW5TZXR0aW5nczsKYXN5bmMgZnVuY3Rpb24g+
+    "dGVzdEFwaUtleSgpewogY29uc3QgayA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdpbnB1dEFwaUtl+
+    "eScpLnZhbHVlLnRyaW0oKTsKIGNvbnN0IGVsID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ2FwaVRl+
+    "c3RSZXN1bHQnKTsKIGlmICghayl7IGVsLnN0eWxlLmNvbG9yPScjZjg3MTcxJzsgZWwudGV4dENvbnRl+
+    "bnQ9J1x1Mjc0YyBBUEkgXHVkMGE0XHViOTdjIFx1Yzc4NVx1YjgyNVx1ZDU3NFx1YzhmY1x1YzEzOFx1+
+    "YzY5NCc7IHJldHVybjsgfQogZWwuc3R5bGUuY29sb3I9JyNmYmJmMjQnOyBlbC50ZXh0Q29udGVudD0n+
+    "XHUxZjUwNCBcdWMwYWNcdWM2YTkgXHVhYzAwXHViMmE1XHVkNTVjIFx1YmFhOFx1YjM3OCBcdWM4NzBc+
+    "dWQ2OGMgXHVjOTExLi4uJzsKIHRyeSB7CiBsZXQgbGlzdCA9IGF3YWl0IGRpc2NvdmVyTW9kZWxzKGsp+
+    "OwogaWYgKGxpc3QgJiYgbGlzdC5sZW5ndGggPiAwKSB7CiBjb25zdCBuYW1lcyA9IGxpc3Quc2xpY2Uo+
+    "MCwgNCkubWFwKG0gPT4gbS5pZCkuam9pbignLCAnKTsKIGNvbnN0IGV4dHJhID0gbGlzdC5sZW5ndGgg+
+    "PiA0ID8gYCDsmbggJHtsaXN0Lmxlbmd0aCAtIDR96rCcYCA6ICcnOwogY29uc3QgdmVyID0gbGlzdFsw+
+    "XS52ZXJzaW9uOwogZWwuc3R5bGUuY29sb3IgPSAnIzRhZGU4MCc7CiBlbC50ZXh0Q29udGVudCA9IGDi+
+    "nIUg7Jew6rKwIOyEseqztSAoQVBJICR7dmVyfSkhIOyCrOyaqSDqsIDriqU6ICR7bmFtZXN9JHtleHRy+
+    "YX1gOwogY2FjaGVkTW9kZWxMaXN0ID0gbnVsbDsKIH0gZWxzZSB7CiBlbC5zdHlsZS5jb2xvcj0nI2Zi+
+    "YmYyNCc7IGVsLnRleHRDb250ZW50PSdcdTI2YTBcdWZlMGYgXHViYWE4XHViMzc4IFx1YmFhOVx1Yjg1+
+    "ZCBcdWM4NzBcdWQ2OGMgXHVjMmU0XHVkMzI4IFx1MjE5MiBcdWM5YzFcdWM4MTEgXHVjNWYwXHVhY2Iw+
+    "IFx1ZDE0Y1x1YzJhNFx1ZDJiOCBcdWM5MTEuLi4nOwogY29uc3QgdGVzdE1vZGVsID0gRkFMTEJBQ0tf+
+    "TU9ERUxTWzBdOyAKIGNvbnN0IHJlcyA9IGF3YWl0IGFwaUZldGNoKAogYGh0dHBzOi8vZ2VuZXJhdGl2+
+    "ZWxhbmd1YWdlLmdvb2dsZWFwaXMuY29tLyR7dGVzdE1vZGVsLnZlcnNpb259L21vZGVscy8ke3Rlc3RN+
+    "b2RlbC5pZH06Z2VuZXJhdGVDb250ZW50P2tleT0ke2t9YCwKIHsgbWV0aG9kOidQT1NUJywgaGVhZGVy+
+    "czp7J0NvbnRlbnQtVHlwZSc6J2FwcGxpY2F0aW9uL2pzb24nfSwKIGJvZHk6IEpTT04uc3RyaW5naWZ5+
+    "KHsgY29udGVudHM6W3sgcGFydHM6W3sgdGV4dDoncGluZycgfV0gfV0gfSkgfQogKTsKIGlmIChyZXMu+
+    "b2sgfHwgcmVzLnN0YXR1cyA9PT0gNDAwKSB7CiBlbC5zdHlsZS5jb2xvciA9ICcjNGFkZTgwJzsKIGVs+
+    "LnRleHRDb250ZW50ID0gYOKchSBBUEkg7YKkIOycoO2aqCEgKOuqqOuNuCDrqqnroZ0g7KGw7ZqM64qU+
+    "IOygnO2VnOuQqCwg7IOd7ISx7J2AIOygleyDgSDsnpHrj5kpYDsKIH0gZWxzZSBpZiAocmVzLnN0YXR1+
+    "cyA9PT0gNDAxIHx8IHJlcy5zdGF0dXMgPT09IDQwMykgewogZWwuc3R5bGUuY29sb3IgPSAnI2Y4NzE3+
+    "MSc7CiBlbC50ZXh0Q29udGVudCA9ICdcdTI3NGMgQVBJIFx1ZDBhNCBcdWM3NzhcdWM5OWQgXHVjMmU0+
+    "XHVkMzI4ICg0MDEvNDAzKSBcdTIwMTQgQUkgU3R1ZGlvXHVjNWQwXHVjMTFjIFx1ZDBhNFx1Yjk3YyBc+
+    "dWIyZTRcdWMyZGMgXHViYzFjXHVhZTA5XHViYzFiXHVjNzNjXHVjMTM4XHVjNjk0JzsKIH0gZWxzZSB7+
+    "CiBlbC5zdHlsZS5jb2xvciA9ICcjZmJiZjI0JzsKIGVsLnRleHRDb250ZW50ID0gYOKaoO+4jyDsnZHr+
+    "i7Ug7L2U65OcICR7cmVzLnN0YXR1c30g4oCUIO2CpOuKlCDsnoXroKXrkJDsnLzrgpgg7IOB7YOcIOu2+
+    "iOuqhe2ZlS4g7IOd7ISx7J2EIOyLnOuPhO2VtOuztOyEuOyalC5gOwogfQogfQogfSBjYXRjaChlKSB7+
+    "CiBlbC5zdHlsZS5jb2xvciA9ICcjZjg3MTcxJzsKIGNvbnN0IG1zZyA9IGUubWVzc2FnZSB8fCAnJzsK+
+    "IGlmIChtc2cuaW5jbHVkZXMoJ1x1YzljMVx1YzgxMVx1MDBiN1x1ZDUwNFx1Yjg1ZFx1YzJkYycpIHx8+
+    "IG1zZy50b0xvd2VyQ2FzZSgpLmluY2x1ZGVzKCdmZXRjaCcpKXsKIGVsLnRleHRDb250ZW50ID0gJ1x1+
+    "Mjc0YyBcdWIxMjRcdWQyYjhcdWM2Y2NcdWQwNmMgXHVjNWYwXHVhY2IwIFx1YzYyNFx1Yjk1OCBcdTIw+
+    "MTQgXHVjNzc4XHVkMTMwXHViMTM3IFx1ZDY1NVx1Yzc3OCBcdWI2MTBcdWIyOTQgXHVjMTFjXHViYzg0+
+    "XHVjMmRjXHVjNzkxLmJhdCBcdWMyZTRcdWQ1ODkgXHVkNmM0IFx1YzdhY1x1YzJkY1x1YjNjNCc7CiB9+
+    "IGVsc2UgaWYgKG1zZy5pbmNsdWRlcygnNDAxJykgfHwgbXNnLmluY2x1ZGVzKCc0MDMnKSB8fCBtc2cu+
+    "aW5jbHVkZXMoJ0FQSSBcdWQwYTQgXHVjNjI0XHViOTU4JykpIHsKIGVsLnRleHRDb250ZW50ID0gJ1x1+
+    "Mjc0YyBBUEkgXHVkMGE0IFx1YzYyNFx1Yjk1OCBcdTIwMTQgQUkgU3R1ZGlvXHVjNWQwXHVjMTFjIFx1+
+    "ZDBhNFx1Yjk3YyBcdWQ2NTVcdWM3NzhcdWQ1NThcdWMxMzhcdWM2OTQnOwogfSBlbHNlIHsKIGVsLnRl+
+    "eHRDb250ZW50ID0gJ1x1Mjc0YyAnICsgbXNnLnNsaWNlKDAsIDEyMCk7CiB9CiB9Cn0KZnVuY3Rpb24g+
+    "c2V0QnJhbmQoYnRuKXsKIGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3JBbGwoJy50b2dnbGUnKS5mb3JFYWNo+
+    "KGI9PmIuY2xhc3NMaXN0LnJlbW92ZSgnYWN0aXZlJykpOwogYnRuLmNsYXNzTGlzdC5hZGQoJ2FjdGl2+
+    "ZScpOwogYnJhbmQgPSBidG4uZGF0YXNldC5icmFuZDsKIGJ1aWxkTW9kZWxMaXN0KGJyYW5kKTsKfQpm+
+    "dW5jdGlvbiBidWlsZE1vZGVsTGlzdChiKXsKIGNvbnN0IHNlbCA9IGRvY3VtZW50LmdldEVsZW1lbnRC+
+    "eUlkKCdzZWxNb2RlbCcpOwogc2VsLmlubmVySFRNTCA9ICc8b3B0aW9uIHZhbHVlPSIiPlx1YmFhOFx1+
+    "YjM3OFx1Yzc0NCBcdWMxMjBcdWQwZGRcdWQ1NThcdWMxMzhcdWM2OTQ8L29wdGlvbj4nOwogTU9ERUxT+
+    "W2JdLmZvckVhY2gobSA9PiB7CiBjb25zdCBvID0gZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgnb3B0aW9u+
+    "Jyk7CiBvLnZhbHVlID0gbS5pZDsgby50ZXh0Q29udGVudCA9IG0ubmFtZTsKIHNlbC5hcHBlbmRDaGls+
+    "ZChvKTsKIH0pOwogZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ21vZGVsVGh1bWInKS5pbm5lckhUTUwg+
+    "PSAnPHNwYW4gY2xhc3M9InRodW1iLWVtcHR5Ij5cdWJhYThcdWIzNzhcdWM3NDQgXHVjMTIwXHVkMGRk+
+    "XHVkNTU4XHViYTc0IFx1Yzc3NFx1YmJmOFx1YzljMFx1YWMwMCBcdWQ0NWNcdWMyZGNcdWI0MjlcdWIy+
+    "YzhcdWIyZTQ8L3NwYW4+JzsKfQpmdW5jdGlvbiBvbk1vZGVsQ2hhbmdlKCl7CiBjb25zdCBpZCA9IGRv+
+    "Y3VtZW50LmdldEVsZW1lbnRCeUlkKCdzZWxNb2RlbCcpLnZhbHVlOwogY29uc3QgbSA9IE1PREVMU1ti+
+    "cmFuZF0uZmluZCh4PT54LmlkPT09aWQpOwogY29uc3QgdGh1bWIgPSBkb2N1bWVudC5nZXRFbGVtZW50+
+    "QnlJZCgnbW9kZWxUaHVtYicpOwogaWYgKG0pewogdGh1bWIuaW5uZXJIVE1MID0gYDxpbWcgc3JjPSIk+
+    "e20uaW1nfSIgYWx0PSIke20ubmFtZX0iIGNyb3Nzb3JpZ2luPSJhbm9ueW1vdXMiCiBvbmVycm9yPSJ0+
+    "aGlzLnBhcmVudEVsZW1lbnQuaW5uZXJIVE1MPSc8c3BhbiBjbGFzcz10aHVtYi1lbXB0eT5cdWM3NzRc+
+    "dWJiZjhcdWM5YzAgXHViODVjXHViNGRjIFx1YzJlNFx1ZDMyOCBcdTIwMTQgXHVjOWMxXHVjODExIFx1+
+    "YzVjNVx1Yjg1Y1x1YjRkYyBcdWMwYWNcdWM2YTk8L3NwYW4+JyI+YDsKIH0gZWxzZSB7CiB0aHVtYi5p+
+    "bm5lckhUTUwgPSAnPHNwYW4gY2xhc3M9InRodW1iLWVtcHR5Ij5cdWJhYThcdWIzNzhcdWM3NDQgXHVj+
+    "MTIwXHVkMGRkXHVkNTU4XHViYTc0IFx1Yzc3NFx1YmJmOFx1YzljMFx1YWMwMCBcdWQ0NWNcdWMyZGNc+
+    "dWI0MjlcdWIyYzhcdWIyZTQ8L3NwYW4+JzsKIH0KfQpmdW5jdGlvbiBvbkN1c3RvbUltZyhpbnB1dCl7+
+    "CiBjb25zdCBmaWxlID0gaW5wdXQuZmlsZXNbMF07CiBpZiAoIWZpbGUpIHJldHVybjsKIGNvbnN0IHJl+
+    "YWRlciA9IG5ldyBGaWxlUmVhZGVyKCk7CiByZWFkZXIub25sb2FkID0gZSA9PiB7CiBjb25zdCBwcmV2+
+    "ID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ2N1c3RvbVRodW1iUHJldmlldycpOwogcHJldi5zcmMg+
+    "PSBlLnRhcmdldC5yZXN1bHQ7CiBwcmV2LnN0eWxlLmRpc3BsYXkgPSAnYmxvY2snOwogY29uc3QgaW1n+
+    "ID0gbmV3IEltYWdlKCk7CiBpbWcub25sb2FkID0gKCkgPT4geyBjdXN0b21JbWcgPSBpbWc7IH07CiBp+
+    "bWcuc3JjID0gZS50YXJnZXQucmVzdWx0OwogfTsKIHJlYWRlci5yZWFkQXNEYXRhVVJMKGZpbGUpOwp9+
+    "CmZ1bmN0aW9uIHNldFN0eWxlKGJ0bil7CiBkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKCcuc3R5bGUt+
+    "YnRuJykuZm9yRWFjaChiPT5iLmNsYXNzTGlzdC5yZW1vdmUoJ2FjdGl2ZScpKTsKIGJ0bi5jbGFzc0xp+
+    "c3QuYWRkKCdhY3RpdmUnKTsKIGltZ1N0eWxlID0gYnRuLmRhdGFzZXQuc3R5bGU7Cn0KZnVuY3Rpb24g+
+    "c2V0TG9hZGluZyhvbiwgc3RlcD0nJyl7CiBjb25zdCBvdiA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlk+
+    "KCdsb2FkaW5nT3ZlcmxheScpOwogaWYob24peyBvdi5jbGFzc0xpc3QuYWRkKCdzaG93Jyk7IGRvY3Vt+
+    "ZW50LmdldEVsZW1lbnRCeUlkKCdsb2FkaW5nU3RlcCcpLnRleHRDb250ZW50ID0gc3RlcDsgfQogZWxz+
+    "ZSB7IG92LmNsYXNzTGlzdC5yZW1vdmUoJ3Nob3cnKTsgfQogZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQo+
+    "J2J0bkdlbicpLmRpc2FibGVkID0gb247Cn0KZnVuY3Rpb24gc2hvd0VyclBhbmVsKGh0bWxNc2cpewog+
+    "Y29uc3QgcCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdlcnJQYW5lbCcpOwogZG9jdW1lbnQuZ2V0+
+    "RWxlbWVudEJ5SWQoJ2VyclBhbmVsTXNnJykuaW5uZXJIVE1MID0gaHRtbE1zZzsKIHAuc3R5bGUuZGlz+
+    "cGxheSA9ICdibG9jayc7Cn0KZnVuY3Rpb24gdG9hc3QobXNnLCB0eXBlPScnKXsKIGNvbnN0IGVsID0g+
+    "ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3RvYXN0Jyk7CiBlbC50ZXh0Q29udGVudCA9IG1zZzsKIGVs+
+    "LmNsYXNzTmFtZSA9ICd0b2FzdCBzaG93ICcgKyB0eXBlOwogc2V0VGltZW91dCgoKSA9PiBlbC5jbGFz+
+    "c05hbWU9J3RvYXN0JywgMjgwMCk7Cn0KZnVuY3Rpb24gZ2V0Rm9ybSgpewogY29uc3QgbW9kZWxJZCA9+
+    "IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdzZWxNb2RlbCcpLnZhbHVlOwogaWYgKCFtb2RlbElkKXsg+
+    "dG9hc3QoJ1x1YmFhOFx1YjM3OFx1Yzc0NCBcdWMxMjBcdWQwZGRcdWQ1NzRcdWM4ZmNcdWMxMzhcdWM2+
+    "OTQnLCdlcnJvcicpOyByZXR1cm4gbnVsbDsgfQogY29uc3QgbW9kZWwgPSBNT0RFTFNbYnJhbmRdLmZp+
+    "bmQobT0+bS5pZD09PW1vZGVsSWQpOwogY29uc3Qgb3JpZyA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlk+
+    "KCdpbnBPcmlnJykudmFsdWUudHJpbSgpOwogY29uc3QgZGlzYyA9IGRvY3VtZW50LmdldEVsZW1lbnRC+
+    "eUlkKCdpbnBEaXNjJykudmFsdWUudHJpbSgpOwogaWYgKCFvcmlnIHx8ICFkaXNjKXsgdG9hc3QoJ1x1+
+    "YWMwMFx1YWNhOSBcdWM4MTVcdWJjZjRcdWI5N2MgXHVjNzg1XHViODI1XHVkNTc0XHVjOGZjXHVjMTM4+
+    "XHVjNjk0JywnZXJyb3InKTsgcmV0dXJuIG51bGw7IH0KIGNvbnN0IHNhdmluZyA9IGRvY3VtZW50Lmdl+
+    "dEVsZW1lbnRCeUlkKCdpbnBTYXZpbmcnKS52YWx1ZS50cmltKCk7CiBjb25zdCBzRGF0ZSA9IGRvY3Vt+
+    "ZW50LmdldEVsZW1lbnRCeUlkKCdpbnBTdGFydCcpLnZhbHVlOwogY29uc3QgZURhdGUgPSBkb2N1bWVu+
+    "dC5nZXRFbGVtZW50QnlJZCgnaW5wRW5kJykudmFsdWU7CiBjb25zdCBiZW5lZml0ID0gZG9jdW1lbnQu+
+    "Z2V0RWxlbWVudEJ5SWQoJ2lucEJlbmVmaXQnKS52YWx1ZS50cmltKCk7CiBjb25zdCBwZXJpb2QgPSBz+
+    "RGF0ZSAmJiBlRGF0ZQogPyBgJHtmbXREYXRlKHNEYXRlKX0gfiAke2ZtdERhdGUoZURhdGUpfWAKIDog+
+    "Jyc7CiByZXR1cm4geyBicmFuZCwgbW9kZWwsIG9yaWcsIGRpc2MsIHNhdmluZywgcGVyaW9kLCB0YXJn+
+    "ZXRzOlsuLi50YXJnZXRzXSwgYmVuZWZpdCwgc3R5bGU6aW1nU3R5bGUgfTsKfQpmdW5jdGlvbiBmbXRE+
+    "YXRlKHMpewogY29uc3QgZCA9IG5ldyBEYXRlKHMpOwogcmV0dXJuIGAke2QuZ2V0TW9udGgoKSsxfS8k+
+    "e2QuZ2V0RGF0ZSgpfWA7Cn0KYXN5bmMgZnVuY3Rpb24gc3RhcnRHZW5lcmF0ZSgpewogaWYgKGlzUnVu+
+    "bmluZykgcmV0dXJuOwogY29uc3QgdGVtcGxhdGVNb2RlID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQo+
+    "J2Noa1RlbXBsYXRlJykuY2hlY2tlZDsKIGlmICghdGVtcGxhdGVNb2RlICYmICFhcGlLZXkpeyBvcGVu+
+    "U2V0dGluZ3MoKTsgcmV0dXJuOyB9CiBjb25zdCBmZCA9IGdldEZvcm0oKTsKIGlmICghZmQpIHJldHVy+
+    "bjsKIGxhc3RGb3JtRGF0YSA9IGZkOwogaXNSdW5uaW5nID0gdHJ1ZTsKIGRvY3VtZW50LmdldEVsZW1l+
+    "bnRCeUlkKCdlbXB0eVN0YXRlJyk/LnJlbW92ZSgpOwogZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ21t+
+    "c0JveCcpLmNsYXNzTGlzdC5yZW1vdmUoJ3Nob3cnKTsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdh+
+    "Y3Rpb25Sb3cnKS5jbGFzc0xpc3QucmVtb3ZlKCdzaG93Jyk7CiB0cnkgewogbGV0IG1tc1RleHQgPSAn+
+    "JzsKIGlmICh0ZW1wbGF0ZU1vZGUpIHsKIHNldExvYWRpbmcodHJ1ZSwgJ1x1MWY1YmNcdWZlMGYgXHVk+
+    "MTVjXHVkNTBjXHViOWJmXHVjNzNjXHViODVjIFx1Yzc3NFx1YmJmOFx1YzljMCBcdWMwZGRcdWMxMzEg+
+    "XHVjOTExLi4uJyk7CiBtbXNUZXh0ID0gYnVpbGRUZW1wbGF0ZU1tcyhmZCk7CiB9IGVsc2Ugewogc2V0+
+    "TG9hZGluZyh0cnVlLCAnXHUxZjRkZCBNTVMgXHViYjM4XHVhZDZjIFx1YzBkZFx1YzEzMSBcdWM5MTEg+
+    "KEdlbWluaSkuLi4nKTsKIG1tc1RleHQgPSBhd2FpdCBnZW5NbXNUZXh0KGZkKTsKIH0KIGxhc3RNbXMg+
+    "PSBtbXNUZXh0OwogbGV0IGJnQjY0ID0gbnVsbDsKIGlmICghdGVtcGxhdGVNb2RlKSB7CiBzZXRMb2Fk+
+    "aW5nKHRydWUsICdcdTFmM2E4IFx1YmMzMFx1YWNiZCBcdWM3NzRcdWJiZjhcdWM5YzAgXHVjMGRkXHVj+
+    "MTMxIFx1YzkxMSAoSW1hZ2VuIDMpLi4uJyk7CiB0cnkgewogYmdCNjQgPSBhd2FpdCBnZW5CYWNrZ3Jv+
+    "dW5kKGZkKTsKIHNldExvYWRpbmcodHJ1ZSwgJ1x1MjcwNSBJbWFnZW4gMyBcdWJjMzBcdWFjYmQgXHVj+
+    "MGRkXHVjMTMxIFx1YzY0NFx1YjhjYycpOwogfSBjYXRjaChlKXsKIGNvbnN0IG1zZyA9IGUubWVzc2Fn+
+    "ZSB8fCAnJzsKIGlmIChtc2cuaW5jbHVkZXMoJzQwMycpIHx8IG1zZy5pbmNsdWRlcygncGVybWlzc2lv+
+    "bicpIHx8IG1zZy5pbmNsdWRlcygnYmlsbGluZycpKXsKIHRvYXN0KCdJbWFnZW4gMzogXHVjNzIwXHVi+
+    "OGNjIFx1ZDUwY1x1Yjc5YyBcdWQ1NDRcdWM2OTQgXHUyMTkyIENhbnZhcyBcdWJjMzBcdWFjYmRcdWM3+
+    "M2NcdWI4NWMgXHVjNzkwXHViM2Q5IFx1YzgwNFx1ZDY1OFx1YjQyOVx1YjJjOFx1YjJlNCcsJycpOwog+
+    "fSBlbHNlIGlmIChtc2cuaW5jbHVkZXMoJzQwNCcpIHx8IG1zZy5pbmNsdWRlcygnbm90IGZvdW5kJykp+
+    "ewogdG9hc3QoJ0ltYWdlbiAzIFx1YmJmOFx1YzljMFx1YzZkMCBBUEkgXHVkMGE0IFx1MjE5MiBDYW52+
+    "YXMgXHViYzMwXHVhY2JkXHVjNzNjXHViODVjIFx1Yzc5MFx1YjNkOSBcdWM4MDRcdWQ2NThcdWI0Mjlc+
+    "dWIyYzhcdWIyZTQnLCcnKTsKIH0gZWxzZSB7CiB0b2FzdCgnSW1hZ2VuIFx1YzBkZFx1YzEzMSBcdWMy+
+    "ZTRcdWQzMjggXHUyMTkyIENhbnZhcyBcdWJjMzBcdWFjYmQgXHVjMGFjXHVjNmE5OiAnICsgbXNnLnNs+
+    "aWNlKDAsNjApLCcnKTsKIH0KIGNvbnNvbGUud2FybignSW1hZ2VuIFx1YzJlNFx1ZDMyODonLCBtc2cp+
+    "OwogfQogfQogc2V0TG9hZGluZyh0cnVlLCAnXHUxZjRmMSBcdWM4MWNcdWQ0ODggXHVjNzc0XHViYmY4+
+    "XHVjOWMwIFx1Yjg1Y1x1YjRkYyBcdWM5MTEuLi4nKTsKIGNvbnN0IHBob25lSW1nID0gY3VzdG9tSW1n+
+    "IHx8IGF3YWl0IGxvYWRQaG9uZUltZyhmZC5tb2RlbC5pbWcpOwogc2V0TG9hZGluZyh0cnVlLCAnXHUy+
+    "NzI4IFx1Yzc3NFx1YmJmOFx1YzljMCBcdWQ1NjlcdWMxMzEgXHVjOTExLi4uJyk7CiBhd2FpdCBkb2N1+
+    "bWVudC5mb250cy5yZWFkeTsKIGF3YWl0IGNvbXBvc2VDYW52YXMoYmdCNjQsIHBob25lSW1nLCBmZCwg+
+    "bW1zVGV4dCk7CiBzaG93TW1zKG1tc1RleHQpOwogZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ2FjdGlv+
+    "blJvdycpLmNsYXNzTGlzdC5hZGQoJ3Nob3cnKTsKIGNvbnN0IG1vZGVMYWJlbCA9IHRlbXBsYXRlTW9k+
+    "ZSA/ICdcdWQxNWNcdWQ1MGNcdWI5YmYgXHViYWE4XHViNGRjJyA6ICdBSSBcdWJhYThcdWI0ZGMnOwog+
+    "dG9hc3QoYE1NUyDsg53shLEg7JmE66OMISAoJHttb2RlTGFiZWx9KSDinJNgLCAnc3VjY2VzcycpOwog+
+    "fSBjYXRjaChlKXsKIGNvbnNvbGUuZXJyb3IoJ1x1YzBkZFx1YzEzMSBcdWM2MjRcdWI5NTg6JywgZSk7+
+    "CiBjb25zdCBtc2cgPSBlLm1lc3NhZ2UgfHwgU3RyaW5nKGUpOwogbGV0IGd1aWRlID0gJyc7CiBpZiAo+
+    "bXNnLmluY2x1ZGVzKCdcdWM5YzFcdWM4MTFcdTAwYjdcdWQ1MDRcdWI4NWRcdWMyZGMnKSB8fCBtc2cu+
+    "dG9Mb3dlckNhc2UoKS5pbmNsdWRlcygnZmV0Y2gnKSl7CiBndWlkZSA9ICc8YnI+PGJyPlx1MWY0YTEg+
+    "PHN0cm9uZz5cdWQ1NzRcdWFjYjBcdWJjMjlcdWJjOTUgKDNcdWFjMDBcdWM5YzAgXHVjOTExIFx1ZDU1+
+    "OFx1YjA5OCk8L3N0cm9uZz48YnI+JwogKyAnXHUyNDYwIFx1YzU0NFx1Yjc5OCA8c3Ryb25nPlx1MzAw+
+    "Y0FJIFx1YzVjNlx1Yzc3NCBcdWQxNWNcdWQ1MGNcdWI5YmYgXHVjMGRkXHVjMTMxXHUzMDBkPC9zdHJv+
+    "bmc+IFx1Y2NiNFx1ZDA2YyBcdWQ2YzQgXHVjN2FjXHVjMmRjXHViM2M0IChcdWM5ODlcdWMyZGMgXHVh+
+    "YzAwXHViMmE1KTxicj4nCiArICdcdTI0NjEgXHVjNzA4XHViM2M0XHVjNmIwOiA8Y29kZT5cdWMxMWNc+
+    "dWJjODRcdWMyZGNcdWM3OTEuYmF0PC9jb2RlPiBcdWMyZTRcdWQ1ODkgXHVkNmM0IFx1YmUwY1x1Yjc3+
+    "Y1x1YzZiMFx1YzgwMFx1Yjg1YyBcdWM4MTFcdWMxOGQ8YnI+JwogKyAnXHUyNDYyIEFQSSBcdWMxMjRc+
+    "dWM4MTVcdWM1ZDBcdWMxMWMgPHN0cm9uZz5cdWM1ZjBcdWFjYjAgXHVkMTRjXHVjMmE0XHVkMmI4PC9z+
+    "dHJvbmc+IFx1ZDA3NFx1YjlhZFx1ZDU1OFx1YzVlYyBcdWQwYTQgXHVkNjU1XHVjNzc4JzsKIH0gZWxz+
+    "ZSBpZiAobXNnLmluY2x1ZGVzKCc0MDEnKSB8fCBtc2cuaW5jbHVkZXMoJ0FQSSBrZXknKSB8fCBtc2cu+
+    "aW5jbHVkZXMoJ1x1ZDBhNCBcdWM2MjRcdWI5NTgnKSl7CiBndWlkZSA9ICc8YnI+PGJyPlx1MWY0YTEg+
+    "PHN0cm9uZz5cdWQ1NzRcdWFjYjA6PC9zdHJvbmc+IFx1MjY5OVx1ZmUwZiBBUEkgXHVjMTI0XHVjODE1+
+    "XHVjNWQwXHVjMTFjIEFQSSBcdWQwYTRcdWI5N2MgXHViMmU0XHVjMmRjIFx1Yzc4NVx1YjgyNVx1ZDU1+
+    "OFx1YWNlMCBcdTMwMGNcdWM1ZjBcdWFjYjAgXHVkMTRjXHVjMmE0XHVkMmI4XHUzMDBkXHViOTdjIFx1+
+    "YjIwY1x1YjdlY1x1YzhmY1x1YzEzOFx1YzY5NCc7CiB9IGVsc2UgaWYgKG1zZy5pbmNsdWRlcygncXVv+
+    "dGEnKSB8fCBtc2cuaW5jbHVkZXMoJzQyOScpKXsKIGd1aWRlID0gJzxicj48YnI+XHUxZjRhMSA8c3Ry+
+    "b25nPlx1ZDU3NFx1YWNiMDo8L3N0cm9uZz4gR2VtaW5pIFx1YmIzNFx1YjhjYyBcdWQ1NWNcdWIzYzQg+
+    "XHVjZDA4XHVhY2ZjIFx1MjAxNCAxXHViZDg0IFx1ZDZjNCBcdWIyZTRcdWMyZGMgXHVjMmRjXHViM2M0+
+    "XHVkNTU4XHVhYzcwXHViMDk4IFx1YjBiNFx1Yzc3YyBcdWM3YWNcdWMwYWNcdWM2YTlcdWQ1NThcdWMx+
+    "MzhcdWM2OTQnOwogfQogc2hvd0VyclBhbmVsKCdcdTI3NGMgXHVjNjI0XHViOTU4OiAnICsgbXNnLnJl+
+    "cGxhY2UoL1xuL2csJzxicj4nKS5zbGljZSgwLDIwMCkgKyBndWlkZSk7CiB9IGZpbmFsbHkgewogaXNS+
+    "dW5uaW5nID0gZmFsc2U7CiBzZXRMb2FkaW5nKGZhbHNlKTsKIH0KfQpmdW5jdGlvbiBidWlsZFRlbXBs+
+    "YXRlTW1zKGZkKXsKIGNvbnN0IHRndCA9IGZkLnRhcmdldHMubGVuZ3RoID8gZmQudGFyZ2V0c1swXSA6+
+    "ICcnOwogY29uc3QgdGl0bGVNYXAgPSB7CiAnXHViMmU4XHVhY2U4IFx1YWNlMFx1YWMxZCBcdWM4MDRc+
+    "dWM2YTknOiAnXHViMmU4XHVhY2U4IFx1YWNlMFx1YWMxZCBcdWM4MDRcdWM2YTkgXHVkMmI5XHVhYzAw+
+    "IFx1ZDYxY1x1ZDBkZCcsCiAnXHVkMGMwXHVjMGFjIFx1YjJlOFx1YWNlOCBcdWM4MDRcdWM2YTknOiAn+
+    "XHVkMGMwXHVjMGFjIFx1YWNlMFx1YWMxZCBcdWM4MDRcdWQ2NTggXHVkMmI5XHVhYzAwIFx1ZDYxY1x1+
+    "ZDBkZCcsCiAnXHVhZTMwXHVhZTMwXHViY2MwXHVhY2JkJzogJ1x1YWUzMFx1YWUzMFx1YmNjMFx1YWNi+
+    "ZCBcdWQyYjlcdWFjMDAgXHVkNjFjXHVkMGRkIFx1YzU0OFx1YjBiNCcsCiAnXHViYzg4XHVkNjM4XHVj+
+    "Nzc0XHViM2Q5JzogJ1x1YmM4OFx1ZDYzOFx1Yzc3NFx1YjNkOSBcdWQzMGNcdWFjYTkgXHVkMmI5XHVh+
+    "YzAwIFx1YzYyNFx1ZDUwOCcsCiB9OwogY29uc3QgdGl0bGUgPSB0Z3QgPyAodGl0bGVNYXBbdGd0XSB8+
+    "fCB0Z3QgKyAnIFx1ZDJiOVx1YWMwMCBcdWQ2MWNcdWQwZGQnKSA6ICdcdWQyYjlcdWFjMDAgXHVkNjFj+
+    "XHVkMGRkIFx1YzU0OFx1YjBiNCc7CiBjb25zdCBvcGVuTWFwID0gewogJ1x1YjJlOFx1YWNlOCBcdWFj+
+    "ZTBcdWFjMWQgXHVjODA0XHVjNmE5JzogJ1x1ZDczNFx1YjMwMFx1ZDNmMCBcdWM2MjRcdWI3OTggXHVj+
+    "NGYwXHVjMTY4XHViMmU0XHViYTc0IFx1YzljMFx1YWUwOFx1Yzc3NCBcdWFkNTBcdWNjYjQgXHVkMGMw+
+    "XHVjNzc0XHViYzBkXHVjNzg1XHViMmM4XHViMmU0LicsCiAnXHVkMGMwXHVjMGFjIFx1YjJlOFx1YWNl+
+    "OCBcdWM4MDRcdWM2YTknOiAnXHVjOWMwXHVhZTA4IFx1Yzc3NFx1YjNkOVx1ZDU1OFx1YzJkY1x1YmE3+
+    "NCBcdWQzMGNcdWFjYTkgXHVkNjFjXHVkMGRkXHVjNzQ0IFx1YjRkY1x1YjliZFx1YjJjOFx1YjJlNC4n+
+    "LAogJ1x1YWUzMFx1YWUzMFx1YmNjMFx1YWNiZCc6ICdcdWFlMzBcdWFlMzBcdWJjYzBcdWFjYmQgXHVh+
+    "Y2UwXHVhYzFkXHViMmQ4XHVjNzQ0IFx1YzcwNFx1ZDU1YyBcdWIyZThcdWIzYzUgXHVkMmI5XHVhYzAw+
+    "XHVjNzg1XHViMmM4XHViMmU0LicsCiAnXHViYzg4XHVkNjM4XHVjNzc0XHViM2Q5JzogJ1x1YmM4OFx1+
+    "ZDYzOFx1Yzc3NFx1YjNkOSBcdWQzMGNcdWFjYTkgXHVjZDVjXHVjODAwXHVhYzAwIFx1YzYyNFx1YjI5+
+    "OFx1YjljYyBcdWQ1NWNcdWM4MTUgXHVjNmI0XHVjNjAxIScsCiB9OwogY29uc3Qgb3BlbmluZyA9IHRn+
+    "dCA/IChvcGVuTWFwW3RndF0gfHwgJ1x1ZDU1Y1x1YzgxNSBcdWQyYjlcdWFjMDAgXHVkNjFjXHVkMGRk+
+    "XHVjNzQ0IFx1YzU0OFx1YjBiNFx1YjRkY1x1YjliZFx1YjJjOFx1YjJlNC4nKSA6ICdcdWQ1NWNcdWM4+
+    "MTUgXHVkMmI5XHVhYzAwIFx1ZDYxY1x1ZDBkZFx1Yzc0NCBcdWM1NDhcdWIwYjRcdWI0ZGNcdWI5YmRc+
+    "dWIyYzhcdWIyZTQuJzsKIGNvbnN0IHNhdmluZyA9IGZkLnNhdmluZyA/IGBcbiAoJHtmZC5zYXZpbmd9+
+    "IOygiOyVvSlgIDogJyc7CiBjb25zdCBwZXJpb2QgPSBmZC5wZXJpb2QgPyBgXG7igLsg7ZaJ7IKs6riw+
+    "6rCEIDogJHtmZC5wZXJpb2R9YCA6ICcnOwogY29uc3QgYmVuZWZpdCA9IGZkLmJlbmVmaXQgPyBgXG7i+
+    "mIUgJHtmZC5iZW5lZml0fWAgOiAnJzsKIHJldHVybiBgWyAke3RpdGxlfSBdCiR7b3BlbmluZ30K4pag+
+    "ICR7ZmQubW9kZWwubmFtZX0KIC0g7Lac6rOg6rCAIDogJHtmZC5vcmlnfQogLSDqtazrp6TqsIAgOiAk+
+    "e2ZkLmRpc2N9JHtzYXZpbmd9CiR7ZmQuYmVuZWZpdCA/ICcgLSAnICsgZmQuYmVuZWZpdCA6ICcnfQok+
+    "e3BlcmlvZH0K4oC7IOykgOu5hOuQnCDsiJjrn4kg7IaM7KeEIOyLnCDsobDquLAg7KKF66OMJHtiZW5l+
+    "Zml0fQrrp6TsnqUg67Cp66y4IOuYkOuKlCDsoITtmZQg66y47J2YIOyjvOyLnOuptCDsuZzsoIjtnogg+
+    "7JWI64K065Oc66a964uI64ukLmAucmVwbGFjZSgvXG57Myx9L2csICdcblxuJykudHJpbSgpOwp9CmFz+
+    "eW5jIGZ1bmN0aW9uIGdlbk1tc1RleHQoZmQpewogY29uc3QgdFN0ciA9IGZkLnRhcmdldHMubGVuZ3Ro+
+    "ID8gZmQudGFyZ2V0c1swXSA6ICcnOwogY29uc3QgdG9uZU1hcCA9IHsKICdcdWIyZThcdWFjZTggXHVh+
+    "Y2UwXHVhYzFkIFx1YzgwNFx1YzZhOSc6ICdcdWM3YTVcdWFlMzAgXHVjNzc0XHVjNmE5IFx1YWNlMFx1+
+    "YWMxZCBcdWFjMTBcdWMwYWMgXHVkMWE0IFx1MjAxNCAiXHVjNjI0XHViNzk4IFx1YzRmMFx1YzE2OFx1+
+    "YjJlNFx1YmE3NCIsICJcdWIyZThcdWFjZTggXHVhY2UwXHVhYzFkXHViMmQ4XHVhZWQ4IiBcdWI0ZjEg+
+    "XHVhYzEwXHVjMTMxXHVjODAxIFx1YzgxMVx1YWRmYywgXHVjMmUwXHViOGIwIFx1YWUzMFx1YmMxOCBc+
+    "dWQ2MWNcdWQwZGQgXHVhYzE1XHVjODcwJywKICdcdWQwYzBcdWMwYWMgXHViMmU4XHVhY2U4IFx1Yzgw+
+    "NFx1YzZhOSc6ICdcdWQwYzBcdWMwYWMgXHVhY2UwXHVhYzFkIFx1YzcyMFx1Y2U1OCBcdWQxYTQgXHUy+
+    "MDE0IFx1Yzc3NFx1YjNkOSBcdWJhNTRcdWI5YWNcdWQyYjhcdWM2NDAgXHVkMzBjXHVhY2E5IFx1YWMw+
+    "MFx1YWNhOSBcdWM5YzFcdWM4MTEgXHVhYzE1XHVjODcwLCAiXHVjOWMwXHVhZTA4IFx1YzYyNFx1YzJk+
+    "Y1x1YmE3NCIgXHViNGYxIFx1YzcyMFx1Yzc3OCcsCiAnXHVhZTMwXHVhZTMwXHViY2MwXHVhY2JkJzog+
+    "J1x1YWUzMFx1YWUzMFx1YmNjMFx1YWNiZCBcdWFjZTBcdWFjMWQgXHVkMWE0IFx1MjAxNCBcdWIyZThc+
+    "dWMyMWNcdTAwYjdcdWJhODVcdWQ2NTVcdWQ1NWMgXHVhYzAwXHVhY2E5IFx1ZDYxY1x1ZDBkZCBcdWM5+
+    "MTFcdWMyZWMsIFx1Yzg3MFx1YWM3NCBcdWFjMDRcdWFjYjBcdWQ1NThcdWFjOGMnLAogJ1x1YmM4OFx1+
+    "ZDYzOFx1Yzc3NFx1YjNkOSc6ICdcdWJjODhcdWQ2MzhcdWM3NzRcdWIzZDkgXHVhZTM0XHVhZTA5IFx1+
+    "ZDFhNCBcdTIwMTQgIlx1YzEyMFx1Y2MyOVx1YzIxYyIsICJcdWM2MjRcdWIyOThcdWI5Y2MiLCAiXHVh+
+    "ZTM0XHVhZTA5IFx1YzYyNFx1ZDUwOCIgXHViNGYxIFx1ZDc2Y1x1YzE4Y1x1YzEzMVx1MDBiN1x1YWUz+
+    "NFx1YWUwOVx1YzEzMSBcdWFkZjlcdWIzMDBcdWQ2NTQnLAogfTsKIGNvbnN0IHRvbmVHdWlkZSA9IHRT+
+    "dHIgJiYgdG9uZU1hcFt0U3RyXSA/IHRvbmVNYXBbdFN0cl0gOiAnXHVjNzdjXHViYzE4IFx1YWNlMFx1+
+    "YWMxZCBcdWIzMDBcdWMwYzEgXHUyMDE0IFx1ZDYxY1x1ZDBkZCBcdWJhODVcdWQ2NTUsIFx1YWMwMFx1+
+    "YWNhOSBcdWM5MTFcdWMyZWMnOwogY29uc3QgcHJvbXB0ID0gYOuLueyLoOydgCDtlZzqta0g7J2064+Z+
+    "7Ya17IugIOuMgOumrOygkCBNTVMg66eI7LyA7YyFIOyghOusuOqwgOyeheuLiOuLpC4K7JWE656YIOyL+
+    "pOygnCDrsJzshqEg7IOY7ZSM7J2EIOywuOqzoO2VtCDrj5nsnbztlZwg7Iqk7YOA7J2866GcIE1NUyDr+
+    "rLjqtazrpbwg7J6R7ISx7ZWY7IS47JqULgpb7Iuk7KCcIOuwnOyGoSDsg5jtlIwg4oCUIOydtCDsiqTt+
+    "g4DsnbzsnYQg65Sw66W07IS47JqUXQotLS0KWyDrsojtmLjsnbTrj5kg7Yq56rCAIO2YnO2DnSDquLTq+
+    "uIkg7Jik7ZSIIF0K7KeA6riIIO2MjOqyqSDstZzsoIDqsIAg7Jik64qY66eMIO2VnOyglSEK4pGgIOqw+
+    "pOufreyLnFMyNSBGRSA5NOunjOybkCDihpIg7ZWg67aAMOybkArikaEg7JWE7J207Y+wMTcgMTI466eM+
+    "7JuQIOKGkiAzNOunjOybkArsmKTripjrp4wg7ZWc7KCV7IiY65+JIOyhsOq4sOuniOqwkCDsmIjsg4Hr+
+    "kKnri4jri6QuCuyngOq4iCDrsJTroZwg7KCE7ZmUIOyYiOyVveycvOuhnCDtmJztg53snYQg7ZmV67O0+
+    "7ZWY7IS47JqULgotLS0KWyDstZzsoIDqsIAg6rCk65+t7IucIOq1kOyytCDtmJztg50gXQrtnLTrjIDt+
+    "j7AgM+uFhCDsnbTsg4Eg7JOw7IWo64uk66m0IOyngOq4iOydtCDstZzsoIDqsIAg6rWQ7LK0IO2DgOyd+
+    "tOuwjeyeheuLiOuLpC4K4pagIOqwpOufreyLnCBTMjUgRkUKIC0g7Lac6rOg6rCAIDogOTXrp4zsm5AK+
+    "IC0g6rWs66ek6rCAIDogOeunjOybkCAoODbrp4zsm5Ag7ZWg7J24KQogKuqzteyLnOyngOybkOq4iCDq+
+    "uLDspIAK6riw7ZqMIOuGk+y5mOyngCDrp4jshLjsmpQhCi0tLQpbIOuqheygiCDqtZDssrQg7Zic7YOd+
+    "IOyViOuCtCBdClNLVCDsnqXquLDsgqzsmqkg6rOg6rCd64uY6ruYIOuTnOumrOuKlCDslYjrgrTsnoXr+
+    "i4jri6QK6rCk65+t7IucIFMyNSBGRQrilrYgMTnrp4zsm5Ag6rWs66ekIOqwgOuKpQrilrYg6rO17Iuc+
+    "7KeA7JuQ6riIIOq4sOykgArtnLTrjIDtj7Ag7Jik656YIOyTsOyFqOuLpOuptCDsnbTrsojsnbQg6rWQ+
+    "7LK0IOq4sO2ajOyeheuLiOuLpArigLsg7ZaJ7IKs6riw6rCEIDogMi8xMyB+IDIvMTgK4oC7IOykgOu5+
+    "hOuQnCDsiJjrn4kg7IaM7KeEIOyLnCDsooXro4wK66ek7J6lIOuwqeusuO2VmOyFlOyEnCDssrTtl5jt+
+    "lbTrs7TshLjsmpQKLS0tClvsnbTrsogg7ZaJ7IKsIOygleuztF0KLSDquLDquLA6ICR7ZmQubW9kZWwu+
+    "bmFtZX0KLSDstpzqs6DqsIA6ICR7ZmQub3JpZ30KLSDqtazrp6TqsIA6ICR7ZmQuZGlzY30KJHtmZC5z+
+    "YXZpbmcgPyBgLSDtlaDsnbjtj606ICR7ZmQuc2F2aW5nfWAgOiAnJ30KJHtmZC5wZXJpb2QgPyBgLSDt+
+    "lonsgqwg6riw6rCEOiAke2ZkLnBlcmlvZH1gIDogJyd9CiR7dFN0ciA/IGAtIOuMgOyDgTogJHt0U3Ry+
+    "fWAgOiAnJ30KJHtmZC5iZW5lZml0ID8gYC0g7LaU6rCAIO2YnO2DnTogJHtmZC5iZW5lZml0fWAgOiAn+
+    "J30KW+yekeyEsSDqt5zsuZkg4oCUIOuwmOuTnOyLnCDspIDsiJhdCjEuIDE1MOyekCDsnbTrgrQgKOyn+
+    "p+qzoCDsnoTtjKntirgg7J6I6rKMKQoyLiDsoJzrqqnsnYAg64yA6rSE7Zi4IFsgXSDslYjsl5Ag7ZW1+
+    "7IusIO2CpOybjOuTnCAo7JiIOiBbIOuyiO2YuOydtOuPmSDtirnqsIAg6ri06riJIOyYpO2UiCBdKQoz+
+    "LiDtg4Dqsp8g7YakOiAke3RvbmVHdWlkZX0KNC4g6rCA6rKpIO2RnO2YhDogIlx1Y2Q5Y1x1YWNlMFx1+
+    "YWMwMCBcdTIxOTIgXHVhZDZjXHViOWU0XHVhYzAwIChcdWQ1NjBcdWM3NzhcdWQzZWQpIiDtmJXsi50g+
+    "7Jyg7KeACjUuIO2XiOyaqSDquLDtmLg6IOKYhSDilrYg4pagIOKAuyDikaDikaHikaIg66eMIOyCrOya+
+    "qQogLSDsnbTrqqjsp4Ao7JiIOiDwn5Sl8J+TsfCfkrApIOygiOuMgCDsgqzsmqkg6riI7KeACiAtIO2K+
+    "ueyImCDsnKDri4jsvZTrk5wg6riw7Zi4KOyYiDog4peG4peH4pay4pazKSDsgqzsmqkg6riI7KeACjYu+
+    "IOyhsOqxtMK36riw6rCE7J2AIOKAuyDroZwg7ZuE66+4IOyymOumrAo3LiDrp4jsp4Drp4kg7KSEOiDr+
+    "grTrsKkg65iQ64qUIOyghO2ZlCDsmIjslb0g7Jyg64+EIENUQQo4LiDsnpDsl7DsiqTrn6zsmrQg7ZWc+
+    "6rWt7Ja0LCDqsr3slrQg7IKs7JqpCuusuOyekCDrqZTsi5zsp4Ag67O466y466eMIOy2nOugpe2VmOqz+
+    "oCDshKTrqoXCt+u2gOyXsOydgCDtlZjsp4Ag66eI7IS47JqULmA7CiBzZXRMb2FkaW5nKHRydWUsICdc+
+    "dTFmNTBkIFx1YzBhY1x1YzZhOSBcdWFjMDBcdWIyYTVcdWQ1NWMgR2VtaW5pIFx1YmFhOFx1YjM3OCBc+
+    "dWM4NzBcdWQ2OGMgXHVjOTExLi4uJyk7CiBsZXQgbW9kZWxMaXN0ID0gYXdhaXQgZGlzY292ZXJNb2Rl+
+    "bHMoKTsKIGlmICghbW9kZWxMaXN0IHx8IG1vZGVsTGlzdC5sZW5ndGggPT09IDApIHsKIGNvbnNvbGUu+
+    "d2FybignTGlzdE1vZGVscyBcdWM4NzBcdWQ2OGMgXHVjMmU0XHVkMzI4IFx1MjE5MiBcdWQzZjRcdWJj+
+    "MzEgXHViYWE4XHViMzc4IFx1YmFhOVx1Yjg1ZFx1YzczY1x1Yjg1YyBcdWMyZGNcdWIzYzQnKTsKIHNl+
+    "dExvYWRpbmcodHJ1ZSwgJ1x1MjZhMFx1ZmUwZiBcdWJhYThcdWIzNzggXHVjODcwXHVkNjhjIFx1YzJl+
+    "NFx1ZDMyOCBcdTIxOTIgXHVhZTMwXHViY2Y4IFx1YmFhOFx1YjM3OFx1Yjg1YyBcdWM3YWNcdWMyZGNc+
+    "dWIzYzQgXHVjOTExLi4uJyk7CiBtb2RlbExpc3QgPSBGQUxMQkFDS19NT0RFTFM7CiB9CiBsZXQgbGFz+
+    "dEVyciA9IG51bGw7CiBmb3IgKGNvbnN0IHsgaWQsIHZlcnNpb24gfSBvZiBtb2RlbExpc3QpIHsKIHRy+
+    "eSB7CiBzZXRMb2FkaW5nKHRydWUsIGDwn5OdIE1NUyDrrLjqtawg7IOd7ISxIOykkSAoJHtpZH0pLi4u+
+    "YCk7CiBjb25zdCByZXMgPSBhd2FpdCBhcGlGZXRjaCgKIGBodHRwczovL2dlbmVyYXRpdmVsYW5ndWFn+
+    "ZS5nb29nbGVhcGlzLmNvbS8ke3ZlcnNpb259L21vZGVscy8ke2lkfTpnZW5lcmF0ZUNvbnRlbnQ/a2V5+
+    "PSR7YXBpS2V5fWAsCiB7IG1ldGhvZDonUE9TVCcsIGhlYWRlcnM6eydDb250ZW50LVR5cGUnOidhcHBs+
+    "aWNhdGlvbi9qc29uJ30sCiBib2R5OiBKU09OLnN0cmluZ2lmeSh7IGNvbnRlbnRzOlt7IHBhcnRzOlt7+
+    "IHRleHQ6cHJvbXB0IH1dIH1dIH0pIH0KICk7CiBpZiAocmVzLnN0YXR1cyA9PT0gNDA0KXsgbGFzdEVy+
+    "ciA9IG5ldyBFcnJvcihg66qo6424IOyXhuydjDogJHtpZH1gKTsgY29udGludWU7IH0KIGlmICghcmVz+
+    "Lm9rKXsKIGNvbnN0IGUgPSBhd2FpdCByZXMuanNvbigpLmNhdGNoKCgpPT4oe30pKTsKIGNvbnN0IG1z+
+    "ZyA9IGUuZXJyb3I/Lm1lc3NhZ2UgfHwgYEhUVFAgJHtyZXMuc3RhdHVzfWA7CiBpZiAocmVzLnN0YXR1+
+    "cz09PTQwMSB8fCByZXMuc3RhdHVzPT09NDAzKXsgdGhyb3cgbmV3IEVycm9yKCdBUEkgXHVkMGE0IFx1+
+    "YzYyNFx1Yjk1ODogJyArIG1zZyk7IH0KIGxhc3RFcnIgPSBuZXcgRXJyb3IobXNnKTsgY29udGludWU7+
+    "CiB9CiBjb25zdCBkYXRhID0gYXdhaXQgcmVzLmpzb24oKTsKIGNvbnNvbGUubG9nKCdcdTI3MDUgXHVj+
+    "MGFjXHVjNmE5IFx1YmFhOFx1YjM3ODonLCBpZCwgJygnLCB2ZXJzaW9uLCAnKScpOwogcmV0dXJuIGRh+
+    "dGEuY2FuZGlkYXRlc1swXS5jb250ZW50LnBhcnRzWzBdLnRleHQudHJpbSgpOwogfSBjYXRjaChlKSB7+
+    "CiBpZiAoZS5tZXNzYWdlICYmIChlLm1lc3NhZ2UuaW5jbHVkZXMoJ1x1YzljMVx1YzgxMVx1MDBiN1x1+
+    "ZDUwNFx1Yjg1ZFx1YzJkYycpIHx8IGUubWVzc2FnZS5pbmNsdWRlcygnQVBJIFx1ZDBhNCBcdWM2MjRc+
+    "dWI5NTgnKSkpeyB0aHJvdyBlOyB9CiBsYXN0RXJyID0gZTsKIH0KIH0KIGNvbnN0IGVyck1zZyA9IGxh+
+    "c3RFcnI/Lm1lc3NhZ2UgfHwgJ1x1YzU0YyBcdWMyMTggXHVjNWM2XHViMjk0IFx1YzYyNFx1Yjk1OCc7+
+    "CiBpZiAoZXJyTXNnLmluY2x1ZGVzKCdcdWM5YzFcdWM4MTFcdTAwYjdcdWQ1MDRcdWI4NWRcdWMyZGMn+
+    "KSB8fCBlcnJNc2cudG9Mb3dlckNhc2UoKS5pbmNsdWRlcygnZmV0Y2gnKSl7CiB0aHJvdyBuZXcgRXJy+
+    "b3IoJ0FQSSBcdWM1ZjBcdWFjYjAgXHVjMmU0XHVkMzI4IChcdWM5YzFcdWM4MTFcdTAwYjdcdWQ1MDRc+
+    "dWI4NWRcdWMyZGMgXHViYWE4XHViNDUwIFx1Y2MyOFx1YjJlOCkuXG5cblx1MWY0YTEgXHVkNTc0XHVh+
+    "Y2IwXHViYzI5XHViYzk1OlxuXHUyNDYwIFx1YzU0NFx1Yjc5OCBcdTMwMGNBSSBcdWM1YzZcdWM3NzQg+
+    "XHVkMTVjXHVkNTBjXHViOWJmIFx1YzBkZFx1YzEzMVx1MzAwZCBcdWNjYjRcdWQwNmMgXHVkNmM0IFx1+
+    "YzdhY1x1YzJkY1x1YjNjNCAoXHVjOTg5XHVjMmRjIFx1YWMwMFx1YjJhNSlcblx1MjQ2MSBcdWMxMWNc+
+    "dWJjODRcdWMyZGNcdWM3OTEuYmF0IFx1YzJlNFx1ZDU4OSBcdWQ2YzQgbG9jYWxob3N0OjgwODBcdWM3+
+    "M2NcdWI4NWMgXHVjODExXHVjMThkJyk7CiB9CiB0aHJvdyBuZXcgRXJyb3IoJ1x1YmFhOFx1YjRlMCBH+
+    "ZW1pbmkgXHViYWE4XHViMzc4IFx1YzJkY1x1YjNjNCBcdWMyZTRcdWQzMjg6ICcgKyBlcnJNc2cuc2xp+
+    "Y2UoMCwgMTAwKSk7Cn0KYXN5bmMgZnVuY3Rpb24gZ2VuQmFja2dyb3VuZChmZCl7CiBjb25zdCBzdHls+
+    "ZVByb21wdHMgPSB7CiBkYXJrOiAnZGFyayBuYXZ5IGJsdWUgYmFja2dyb3VuZCAoIzBhMTYyOCksIGJy+
+    "aWdodCBsaW1lIHllbGxvdyBnZW9tZXRyaWMgYWNjZW50IGxpbmVzIGFuZCBkaWFnb25hbCBzdHJpcGVz+
+    "LCBhYnN0cmFjdCB0ZWNobm9sb2d5IGNpcmN1aXQgcGF0dGVybnMsIGhpZ2ggY29udHJhc3QgSy1zdHls+
+    "ZSBhZHZlcnRpc2VtZW50JywKIGJyaWdodDogJ2NsZWFuIHdoaXRlIGFuZCBsaWdodCBibHVlIGJhY2tn+
+    "cm91bmQsIG1vZGVybiBtaW5pbWFsaXN0IGRlc2lnbiwgc3VidGxlIGdyYWRpZW50LCBwcm9mZXNzaW9u+
+    "YWwgdGVjaCBhZHZlcnRpc2VtZW50IHdpdGggYmx1ZSBhY2NlbnRzJywKIHByZW1pdW06ICdkZWVwIGJs+
+    "YWNrIGFuZCBnb2xkIHByZW1pdW0gYmFja2dyb3VuZCwgbHV4dXJ5IG1vYmlsZSBwaG9uZSBhZHZlcnRp+
+    "c2VtZW50LCBlbGVnYW50IGdlb21ldHJpYyBwYXR0ZXJucywgbWV0YWxsaWMgZ29sZCBhY2NlbnQgbGlu+
+    "ZXMnCiB9OwogY29uc3QgcHJvbXB0ID0gYFByb2Zlc3Npb25hbCBTb3V0aCBLb3JlYW4gbW9iaWxlIHBo+
+    "b25lIHByb21vdGlvbmFsIGFkdmVydGlzZW1lbnQgYmFja2dyb3VuZCwKJHtzdHlsZVByb21wdHNbZmQu+
+    "c3R5bGVdfSwKbm8gdGV4dCwgbm8gcGhvbmUgZGV2aWNlcywgbm8gcGVvcGxlLApzcXVhcmUgMToxIGZv+
+    "cm1hdCwgc3VpdGFibGUgZm9yIG92ZXJsYXkgY29tcG9zaXRpb24sCiR7ZmQuYnJhbmQ9PT0nc2Ftc3Vu+
+    "ZycgPyAnU2Ftc3VuZyBHYWxheHknIDogJ0FwcGxlIGlQaG9uZSd9IHByb21vdGlvbmFsIGFlc3RoZXRp+
+    "Y2A7CiBjb25zdCByZXMgPSBhd2FpdCBhcGlGZXRjaCgKIGBodHRwczovL2dlbmVyYXRpdmVsYW5ndWFn+
+    "ZS5nb29nbGVhcGlzLmNvbS92MWJldGEvbW9kZWxzL2ltYWdlbi0zLjAtZ2VuZXJhdGUtMDAyOnByZWRp+
+    "Y3Q/a2V5PSR7YXBpS2V5fWAsCiB7IG1ldGhvZDonUE9TVCcsIGhlYWRlcnM6eydDb250ZW50LVR5cGUn+
+    "OidhcHBsaWNhdGlvbi9qc29uJ30sCiBib2R5OiBKU09OLnN0cmluZ2lmeSh7CiBpbnN0YW5jZXM6W3sg+
+    "cHJvbXB0IH1dLAogcGFyYW1ldGVyczp7IHNhbXBsZUNvdW50OjEsIGFzcGVjdFJhdGlvOicxOjEnLCBz+
+    "YWZldHlTZXR0aW5nOidCTE9DS19PTkxZX0hJR0gnLCBwZXJzb25HZW5lcmF0aW9uOidkb250X2FsbG93+
+    "JyB9CiB9KQogfQogKTsKIGlmICghcmVzLm9rKXsgY29uc3QgZT1hd2FpdCByZXMuanNvbigpLmNhdGNo+
+    "KCgpPT4oe30pKTsgdGhyb3cgbmV3IEVycm9yKGUuZXJyb3I/Lm1lc3NhZ2V8fGBJbWFnZW4gSFRUUCAk+
+    "e3Jlcy5zdGF0dXN9YCk7IH0KIGNvbnN0IGRhdGEgPSBhd2FpdCByZXMuanNvbigpOwogaWYgKCFkYXRh+
+    "LnByZWRpY3Rpb25zPy5bMF0pIHRocm93IG5ldyBFcnJvcignSW1hZ2VuIFx1Yzc1MVx1YjJmNSBcdWM1+
+    "YzZcdWM3NGMnKTsKIHJldHVybiBgZGF0YTppbWFnZS9wbmc7YmFzZTY0LCR7ZGF0YS5wcmVkaWN0aW9u+
+    "c1swXS5ieXRlc0Jhc2U2NEVuY29kZWR9YDsKfQphc3luYyBmdW5jdGlvbiBsb2FkUGhvbmVJbWcodXJs+
+    "KXsKIHRyeSB7IHJldHVybiBhd2FpdCBpbWdMb2FkKHVybCwgdHJ1ZSk7IH0gY2F0Y2gge30KIHRyeSB7+
+    "IHJldHVybiBhd2FpdCBpbWdMb2FkKGBodHRwczovL2NvcnNwcm94eS5pby8/dXJsPSR7ZW5jb2RlVVJJ+
+    "Q29tcG9uZW50KHVybCl9YCwgdHJ1ZSk7IH0gY2F0Y2gge30KIHRyeSB7IHJldHVybiBhd2FpdCBpbWdM+
+    "b2FkKHVybCwgZmFsc2UpOyB9IGNhdGNoIHt9CiByZXR1cm4gbnVsbDsKfQpmdW5jdGlvbiBpbWdMb2Fk+
+    "KHNyYywgY29ycz10cnVlKXsKIHJldHVybiBuZXcgUHJvbWlzZSgocmVzb2x2ZSwgcmVqZWN0KSA9PiB7+
+    "CiBjb25zdCBpbWcgPSBuZXcgSW1hZ2UoKTsKIGlmIChjb3JzKSBpbWcuY3Jvc3NPcmlnaW4gPSAnYW5v+
+    "bnltb3VzJzsKIGltZy5vbmxvYWQgPSAoKSA9PiByZXNvbHZlKGltZyk7CiBpbWcub25lcnJvciA9IHJl+
+    "amVjdDsKIGltZy5zcmMgPSBzcmM7CiBzZXRUaW1lb3V0KCgpPT5yZWplY3QobmV3IEVycm9yKCd0aW1l+
+    "b3V0JykpLCA5MDAwKTsKIH0pOwp9CmFzeW5jIGZ1bmN0aW9uIGNvbXBvc2VDYW52YXMoYmdCNjQsIHBo+
+    "b25lSW1nLCBmZCwgbW1zVGV4dCl7CiBjb25zdCBjYW52YXMgPSBkb2N1bWVudC5nZXRFbGVtZW50QnlJ+
+    "ZCgncHJldmlld0NhbnZhcycpOwogY29uc3QgY3R4ID0gY2FudmFzLmdldENvbnRleHQoJzJkJyk7CiBj+
+    "YW52YXMud2lkdGggPSBjYW52YXMuaGVpZ2h0ID0gMTAwMDsKIGNvbnN0IEFDID0gQUNDRU5UKGZkLnN0+
+    "eWxlKTsKIGNvbnN0IGlzRGFyayA9IGZkLnN0eWxlICE9PSAnYnJpZ2h0JzsKIGNvbnN0IFRDID0gaXNE+
+    "YXJrID8gJyNmZmZmZmYnIDogJyMwYTE2MjgnOwogY29uc3QgVEMyID0gaXNEYXJrID8gJ3JnYmEoMjU1+
+    "LDI1NSwyNTUsMC42MiknIDogJ3JnYmEoMTAsMjIsNDAsMC41OCknOwogY29uc3QgVEMzID0gaXNEYXJr+
+    "ID8gJ3JnYmEoMjU1LDI1NSwyNTUsMC4zMiknIDogJ3JnYmEoMTAsMjIsNDAsMC4zMiknOwogaWYoYmdC+
+    "NjQpewogY29uc3QgYmcgPSBhd2FpdCBpbWdMb2FkKGJnQjY0LCBmYWxzZSk7CiBjdHguZHJhd0ltYWdl+
+    "KGJnLCAwLCAwLCAxMDAwLCAxMDAwKTsKIGNvbnN0IG92ID0gY3R4LmNyZWF0ZUxpbmVhckdyYWRpZW50+
+    "KDAsMCwxMDAwLDApOwogaWYoaXNEYXJrKXsKIG92LmFkZENvbG9yU3RvcCgwLCAncmdiYSg2LDE0LDMw+
+    "LDAuOTUpJyk7CiBvdi5hZGRDb2xvclN0b3AoMC40NiwgJ3JnYmEoNiwxNCwzMCwwLjgwKScpOwogb3Yu+
+    "YWRkQ29sb3JTdG9wKDAuNjgsICdyZ2JhKDYsMTQsMzAsMC4yMiknKTsKIG92LmFkZENvbG9yU3RvcCgx+
+    "LCAncmdiYSg2LDE0LDMwLDAuMDIpJyk7CiB9IGVsc2Ugewogb3YuYWRkQ29sb3JTdG9wKDAsICdyZ2Jh+
+    "KDI0NSwyNTAsMjU1LDAuOTYpJyk7CiBvdi5hZGRDb2xvclN0b3AoMC40NiwgJ3JnYmEoMjQ1LDI1MCwy+
+    "NTUsMC43OCknKTsKIG92LmFkZENvbG9yU3RvcCgwLjY4LCAncmdiYSgyNDUsMjUwLDI1NSwwLjIwKScp+
+    "Owogb3YuYWRkQ29sb3JTdG9wKDEsICdyZ2JhKDI0NSwyNTAsMjU1LDAuMDIpJyk7CiB9CiBjdHguZmls+
+    "bFN0eWxlID0gb3Y7IGN0eC5maWxsUmVjdCgwLDAsMTAwMCwxMDAwKTsKIH0gZWxzZSB7CiBkcmF3RmFs+
+    "bGJhY2tCZyhjdHgsIGZkLnN0eWxlKTsKIH0KIGNvbnN0IFBaT05FX1g9NDUwLCBQWk9ORV9ZPS01MCwg+
+    "UFpPTkVfVz01NTAsIFBaT05FX0g9MTEwMDsKIGlmKHBob25lSW1nKXsKIGNvbnN0IG5hdFcgPSBwaG9u+
+    "ZUltZy5uYXR1cmFsV2lkdGggfHwgcGhvbmVJbWcud2lkdGggfHwgMTsKIGNvbnN0IG5hdEggPSBwaG9u+
+    "ZUltZy5uYXR1cmFsSGVpZ2h0IHx8IHBob25lSW1nLmhlaWdodCB8fCAxOwogY29uc3QgYXNwZWN0ID0g+
+    "bmF0VyAvIG5hdEg7CiBsZXQgZFcsIGRIOwogaWYoYXNwZWN0ID49IFBaT05FX1cgLyBQWk9ORV9IKXsK+
+    "IGRXID0gUFpPTkVfVzsgZEggPSBNYXRoLnJvdW5kKFBaT05FX1cgLyBhc3BlY3QpOwogfSBlbHNlIHsK+
+    "IGRIID0gUFpPTkVfSDsgZFcgPSBNYXRoLnJvdW5kKFBaT05FX0ggKiBhc3BlY3QpOwogfQogY29uc3Qg+
+    "ZFggPSBQWk9ORV9YICsgTWF0aC5yb3VuZCgoUFpPTkVfVyAtIGRXKSAvIDIpOwogY29uc3QgZFkgPSBQ+
+    "Wk9ORV9ZICsgTWF0aC5yb3VuZCgoUFpPTkVfSCAtIGRIKSAvIDIpOwogY29uc3QgaENYID0gZFggKyBk+
+    "VyowLjUsIGhDWSA9IGRZICsgZEgqMC40MjsKIGNvbnN0IGhhbG8gPSBjdHguY3JlYXRlUmFkaWFsR3Jh+
+    "ZGllbnQoaENYLGhDWSwxNiwgaENYLGhDWSxNYXRoLm1heChkVyxkSCkqMC41OCk7CiBoYWxvLmFkZENv+
+    "bG9yU3RvcCgwLCBgJHtBQ30yOGApOyBoYWxvLmFkZENvbG9yU3RvcCgwLjUsYCR7QUN9MEVgKTsgaGFs+
+    "by5hZGRDb2xvclN0b3AoMSwndHJhbnNwYXJlbnQnKTsKIGN0eC5maWxsU3R5bGU9aGFsbzsgY3R4LmZp+
+    "bGxSZWN0KGRYLTgwLGRZLTgwLGRXKzE2MCxkSCsxNjApOwogY3R4LmRyYXdJbWFnZShwaG9uZUltZywg+
+    "ZFgsIGRZLCBkVywgZEgpOwogY29uc3Qgc2hDWSA9IGRZICsgZEggKyAxMDsKIGNvbnN0IHNoID0gY3R4+
+    "LmNyZWF0ZVJhZGlhbEdyYWRpZW50KGRYK2RXLzIsc2hDWSwzLCBkWCtkVy8yLHNoQ1ksZFcqMC40Mik7+
+    "CiBzaC5hZGRDb2xvclN0b3AoMCwncmdiYSgwLDAsMCwwLjM4KScpOyBzaC5hZGRDb2xvclN0b3AoMSwn+
+    "dHJhbnNwYXJlbnQnKTsKIGN0eC5maWxsU3R5bGU9c2g7CiBjdHguYmVnaW5QYXRoKCk7IGN0eC5lbGxp+
+    "cHNlKGRYK2RXLzIsIHNoQ1ksIGRXKjAuNDAsIDE2LCAwLDAsTWF0aC5QSSoyKTsgY3R4LmZpbGwoKTsK+
+    "IH0KIGN0eC50ZXh0QmFzZWxpbmUgPSAndG9wJzsKIGNvbnN0IExYPTUyLCBMVz00MjA7IAogbGV0IHkg+
+    "PSA1MjsKIGNvbnN0IGV2dEhlYWRNYXAgPSB7CiAnXHViMmU4XHVhY2U4IFx1YWNlMFx1YWMxZCBcdWM4+
+    "MDRcdWM2YTknOiAnXHViMmU4XHVhY2U4IFx1YWNlMFx1YWMxZCBcdWM4MDRcdWM2YTkgXHVkMmI5XHVh+
+    "YzAwIFx1ZDU4OVx1YzBhYycsCiAnXHVkMGMwXHVjMGFjIFx1YjJlOFx1YWNlOCBcdWM4MDRcdWM2YTkn+
+    "OiAnXHVkMGMwXHVjMGFjIFx1YjJlOFx1YWNlOCBcdWM4MDRcdWM2YTkgXHVkMmI5XHVhYzAwIFx1ZDU4+
+    "OVx1YzBhYycsCiAnXHVhZTMwXHVhZTMwXHViY2MwXHVhY2JkJzogJ1x1YWUzMFx1YWUzMFx1YmNjMFx1+
+    "YWNiZCBcdWM4MDRcdWM2YTkgXHVkMmI5XHVhYzAwIFx1ZDU4OVx1YzBhYycsCiAnXHViYzg4XHVkNjM4+
+    "XHVjNzc0XHViM2Q5JzogJ1x1YmM4OFx1ZDYzOFx1Yzc3NFx1YjNkOSBcdWQyYjlcdWFjMDAgXHVkNTg5+
+    "XHVjMGFjJywKIH07CiBjb25zdCBldnRIZWFkID0gZmQudGFyZ2V0cy5sZW5ndGggPiAwCiA/IChldnRI+
+    "ZWFkTWFwW2ZkLnRhcmdldHNbMF1dIHx8IGZkLnRhcmdldHNbMF0gKyAnIFx1ZDJiOVx1YWMwMCBcdWQ1+
+    "ODlcdWMwYWMnKQogOiAnXHVkNTVjXHVjODE1IFx1ZDJiOVx1YWMwMCBcdWQ1ODlcdWMwYWMnOwogbGV0+
+    "IGV2dFN6ID0gMjQ7CiBjdHguZm9udCA9IGA3MDAgJHtldnRTen1weCAiTm90byBTYW5zIEtSImA7CiB3+
+    "aGlsZShjdHgubWVhc3VyZVRleHQoZXZ0SGVhZCkud2lkdGggPiBMVyAtIDUyICYmIGV2dFN6ID4gMTYp+
+    "eyBldnRTei0tOyBjdHguZm9udD1gNzAwICR7ZXZ0U3p9cHggIk5vdG8gU2FucyBLUiJgOyB9CiBjb25z+
+    "dCBldnRUeHRXID0gY3R4Lm1lYXN1cmVUZXh0KGV2dEhlYWQpLndpZHRoOwogY29uc3QgZXZ0UGFkWCA9+
+    "IDI2LCBldnRQYWRZID0gMTY7CiBjb25zdCBldnRXID0gZXZ0VHh0VyArIGV2dFBhZFggKiAyOwogY29u+
+    "c3QgZXZ0SCA9IGV2dFN6ICsgZXZ0UGFkWSAqIDI7CiBjb25zdCBldnRSID0gZXZ0SCAvIDI7IAogY3R4+
+    "LmZpbGxTdHlsZSA9IGAke0FDfTIyYDsgcm91bmRSZWN0KGN0eCwgTFgsIHksIGV2dFcsIGV2dEgsIGV2+
+    "dFIpOyBjdHguZmlsbCgpOwogY3R4LnN0cm9rZVN0eWxlID0gQUM7IGN0eC5saW5lV2lkdGggPSAyOyBy+
+    "b3VuZFJlY3QoY3R4LCBMWCwgeSwgZXZ0VywgZXZ0SCwgZXZ0Uik7IGN0eC5zdHJva2UoKTsKIGN0eC5m+
+    "aWxsU3R5bGUgPSBBQzsKIGN0eC5mb250ID0gYDcwMCAke2V2dFN6fXB4ICJOb3RvIFNhbnMgS1IiYDsK+
+    "IGN0eC5maWxsVGV4dChldnRIZWFkLCBMWCArIGV2dFBhZFgsIHkgKyBldnRQYWRZKTsKIHkgKz0gZXZ0+
+    "SCArIDQ0OwogY3R4LmZpbGxTdHlsZSA9IFRDOwogbGV0IG5hbWVTeiA9IDgwOwogY3R4LmZvbnQgPSBg+
+    "OTAwICR7bmFtZVN6fXB4ICJOb3RvIFNhbnMgS1IiYDsKIHdoaWxlKGN0eC5tZWFzdXJlVGV4dChmZC5t+
+    "b2RlbC5uYW1lKS53aWR0aCA+IExXICYmIG5hbWVTeiA+IDQwKXsKIG5hbWVTeiAtPSAzOwogY3R4LmZv+
+    "bnQgPSBgOTAwICR7bmFtZVN6fXB4ICJOb3RvIFNhbnMgS1IiYDsKIH0KIGNvbnN0IG5hbWVMaW5lcyA9+
+    "IHNwbGl0TGluZXMoY3R4LCBmZC5tb2RlbC5uYW1lLCBMVyk7CiBmb3IoY29uc3QgbG4gb2YgbmFtZUxp+
+    "bmVzKXsgY3R4LmZpbGxUZXh0KGxuLCBMWCwgeSk7IHkgKz0gbmFtZVN6ICsgMTA7IH0KIHkgKz0gMjI7+
+    "CiBjdHguZmlsbFN0eWxlID0gQUM7IGN0eC5maWxsUmVjdChMWCwgeSwgNTYsIDUpOwogY3R4LmZpbGxT+
+    "dHlsZSA9IGlzRGFyaz8ncmdiYSgyNTUsMjU1LDI1NSwwLjEyKSc6J3JnYmEoMCwwLDAsMC4xMCknOwog+
+    "Y3R4LmZpbGxSZWN0KExYKzY0LCB5LCBMVy02NCwgNSk7CiB5ICs9IDU4OwogaWYoZmQub3JpZyl7CiBj+
+    "b25zdCBvcmlnQ29sb3IgPSBpc0RhcmsgPyAncmdiYSgyNTUsMjU1LDI1NSwwLjY4KScgOiAncmdiYSgx+
+    "MCwyMiw0MCwwLjYwKSc7CiBjdHguZmlsbFN0eWxlID0gb3JpZ0NvbG9yOwogY3R4LmZvbnQgPSBgNTAw+
+    "IDI2cHggIk5vdG8gU2FucyBLUiJgOwogY29uc3Qgb3JpZ1N0ciA9ICdcdWNkOWNcdWFjZTBcdWFjMDAg+
+    "JyArIGZkLm9yaWc7CiBjb25zdCBvdyA9IGN0eC5tZWFzdXJlVGV4dChvcmlnU3RyKS53aWR0aDsKIGN0+
+    "eC5maWxsVGV4dChvcmlnU3RyLCBMWCwgeSk7CiBjdHguc3Ryb2tlU3R5bGUgPSBpc0RhcmsgPyAncmdi+
+    "YSgyNTUsODAsODAsMC44NSknIDogJ3JnYmEoMTgwLDMwLDMwLDAuNzUpJzsKIGN0eC5saW5lV2lkdGgg+
+    "PSAyLjU7CiBjdHguYmVnaW5QYXRoKCk7IGN0eC5tb3ZlVG8oTFgsIHkrMTMpOyBjdHgubGluZVRvKExY+
+    "K293LCB5KzEzKTsgY3R4LnN0cm9rZSgpOwogeSArPSA2MDsKIH0KIGNvbnN0IGdMYWJlbCA9ICdcdWFk+
+    "NmNcdWI5ZTRcdWFjMDAnOwogY3R4LmZvbnQgPSBgNzAwIDIwcHggIk5vdG8gU2FucyBLUiJgOwogY29u+
+    "c3QgZ2xXID0gY3R4Lm1lYXN1cmVUZXh0KGdMYWJlbCkud2lkdGggKyAzMjsKIGN0eC5maWxsU3R5bGUg+
+    "PSBBQzsKIHJvdW5kUmVjdChjdHgsIExYLCB5LCBnbFcsIDM2LCAxOCk7IGN0eC5maWxsKCk7CiBjdHgu+
+    "ZmlsbFN0eWxlID0gaXNEYXJrID8gJyMwYTE2MjgnIDogJyNmZmZmZmYnOwogY3R4LmZpbGxUZXh0KGdM+
+    "YWJlbCwgTFgrMTYsIHkrOCk7CiB5ICs9IDUwOwogY3R4LmZpbGxTdHlsZSA9IEFDOwogY3R4LmZvbnQg+
+    "PSBgOTAwIDEzNnB4ICJOb3RvIFNhbnMgS1IiYDsKIGN0eC5maWxsVGV4dChmZC5kaXNjLCBMWCwgeSk7+
+    "CiB5ICs9IDE1ODsKIGlmKGZkLnNhdmluZyl7CiBjb25zdCBzdHh0ID0gZmQuc2F2aW5nICsgJyBcdWQ1+
+    "NjBcdWM3NzgnOwogY3R4LmZvbnQgPSBgOTAwIDI4cHggIk5vdG8gU2FucyBLUiJgOwogY29uc3Qgc3cg+
+    "PSBNYXRoLm1pbihjdHgubWVhc3VyZVRleHQoc3R4dCkud2lkdGggKyA1MiwgTFcpOwogY3R4LmZpbGxT+
+    "dHlsZSA9ICcjRTUzOTM1JzsKIHJvdW5kUmVjdChjdHgsIExYLCB5LCBzdywgNjAsIDEwKTsgY3R4LmZp+
+    "bGwoKTsKIGN0eC5maWxsU3R5bGUgPSAnI2ZmZmZmZic7CiBjdHguZmlsbFRleHQoc3R4dCwgTFgrMjYs+
+    "IHkrMTYpOwogeSArPSA4NDsKIH0KIHkgPSBNYXRoLm1heCh5ICsgMTIsIDcyMCk7IAogY3R4LmZpbGxT+
+    "dHlsZSA9IGlzRGFyayA/ICdyZ2JhKDI1NSwyNTUsMjU1LDAuMTApJyA6ICdyZ2JhKDAsMCwwLDAuMDgp+
+    "JzsKIGN0eC5maWxsUmVjdChMWCwgeSwgTFcsIDEuNSk7CiB5ICs9IDIyOwogaWYoZmQuYmVuZWZpdCl7+
+    "CiBjdHguZmlsbFN0eWxlID0gVEM7CiBjdHguZm9udCA9IGA2MDAgMjNweCAiTm90byBTYW5zIEtSImA7+
+    "CiBjb25zdCBibGluZXMgPSBzcGxpdExpbmVzKGN0eCwgJ1x1MjcxNCAnICsgZmQuYmVuZWZpdCwgTFcp+
+    "OwogZm9yKGNvbnN0IGxuIG9mIGJsaW5lcyl7IGN0eC5maWxsVGV4dChsbiwgTFgsIHkpOyB5ICs9IDM4+
+    "OyB9CiB9IGVsc2UgewogY3R4LmZpbGxTdHlsZSA9IFRDOwogY3R4LmZvbnQgPSBgNjAwIDIycHggIk5v+
+    "dG8gU2FucyBLUiJgOwogY3R4LmZpbGxUZXh0KCdcdTI3MTQgXHViZTYwXHViOTc4IFx1YjJmOVx1Yzc3+
+    "YyBcdWFjMWNcdWQxYjUgXHUyNzE0IFx1YzdhY1x1YWNlMCBcdWNkNWNcdWIzMDAgXHVkNjU1XHViY2Y0+
+    "JywgTFgsIHkpOwogfQogY3R4LmZpbGxTdHlsZSA9IEFDOwogY3R4LmZpbGxSZWN0KDAsIDg5NSwgMTAw+
+    "MCwgMTA1KTsKIGN0eC50ZXh0QmFzZWxpbmUgPSAnbWlkZGxlJzsKIGlmKGZkLnBlcmlvZCl7CiBjdHgu+
+    "ZmlsbFN0eWxlID0gJ3JnYmEoMTAsMjIsNDAsMC44MCknOwogY3R4LmZvbnQgPSBgNzAwIDE3cHggIk5v+
+    "dG8gU2FucyBLUiJgOwogY3R4LmZpbGxUZXh0KCdcdWQ1ODlcdWMwYWNcdWFlMzBcdWFjMDQnLCBMWCwg+
+    "OTE2KTsKIGN0eC5maWxsU3R5bGUgPSAnIzBhMTYyOCc7CiBjdHguZm9udCA9IGA5MDAgMzZweCAiTm90+
+    "byBTYW5zIEtSImA7CiBjdHguZmlsbFRleHQoZmQucGVyaW9kLCBMWCwgOTUyKTsKIGN0eC5maWxsU3R5+
+    "bGUgPSAnIzBhMTYyOCc7CiBjdHguZm9udCA9IGA5MDAgMjdweCAiTm90byBTYW5zIEtSImA7CiBjdHgu+
+    "dGV4dEFsaWduID0gJ3JpZ2h0JzsKIGN0eC5maWxsVGV4dCgnXHVjOWMwXHVhZTA4IFx1YmMxNFx1Yjg1+
+    "YyBcdWMwYzFcdWIyZjRcdWQ1NThcdWMxMzhcdWM2OTQhJywgOTYwLCA5NDQpOwogY3R4LnRleHRBbGln+
+    "biA9ICdsZWZ0JzsKIH0gZWxzZSB7CiBjdHguZmlsbFN0eWxlID0gJyMwYTE2MjgnOwogY3R4LmZvbnQg+
+    "PSBgOTAwIDMwcHggIk5vdG8gU2FucyBLUiJgOwogY3R4LmZpbGxUZXh0KCdcdWM5YzBcdWFlMDggXHVi+
+    "YzE0XHViODVjIFx1YzBjMVx1YjJmNFx1ZDU1OFx1YzEzOFx1YzY5NCEnLCBMWCwgOTQ3KTsKIH0KIGN0+
+    "eC5maWxsU3R5bGUgPSAncmdiYSgxMCwyMiw0MCwwLjQwKSc7CiBjdHguZm9udCA9IGA0MDAgMTJweCAi+
+    "Tm90byBTYW5zIEtSImA7CiBjdHgudGV4dEJhc2VsaW5lID0gJ2FscGhhYmV0aWMnOwogY3R4LmZpbGxU+
+    "ZXh0KCdcdTIwM2IgXHVjNzc0XHViYmY4XHVjOWMwXHViMjk0IFx1YzJlNFx1YmIzY1x1YWNmYyBcdWIy+
+    "ZTRcdWI5N2MgXHVjMjE4IFx1Yzc4OFx1YzczY1x1YmE3MCBcdWQ1ODlcdWMwYWMgXHVhZTMwXHVhYzA0+
+    "IFx1YmMwZiBcdWM4NzBcdWFjNzRcdWM1ZDAgXHViNTMwXHViNzdjIFx1ZDYxY1x1ZDBkZFx1Yzc3NCBc+
+    "dWJjYzBcdWIzZDlcdWI0MjAgXHVjMjE4IFx1Yzc4OFx1YzJiNVx1YjJjOFx1YjJlNC4nLCBMWCwgOTkw+
+    "KTsKfQpmdW5jdGlvbiBBQ0NFTlQoc3R5bGUpewogaWYoc3R5bGU9PT0ncHJlbWl1bScpIHJldHVybiAn+
+    "I0Q0QUYzNyc7CiBpZihzdHlsZT09PSdicmlnaHQnKSByZXR1cm4gJyMyNTYzRUInOwogcmV0dXJuICcj+
+    "RkZFNTAwJzsKfQpmdW5jdGlvbiBkcmF3RmFsbGJhY2tCZyhjdHgsIHN0eWxlKXsKIGNvbnN0IGcgPSBj+
+    "dHguY3JlYXRlTGluZWFyR3JhZGllbnQoMCwgMCwgNjUwLCAxMDAwKTsKIGlmKHN0eWxlPT09J2JyaWdo+
+    "dCcpewogZy5hZGRDb2xvclN0b3AoMCwnI2YwZjdmZicpOyBnLmFkZENvbG9yU3RvcCgwLjYsJyNlNmYx+
+    "ZmMnKTsgZy5hZGRDb2xvclN0b3AoMSwnI2RjZThmOCcpOwogfSBlbHNlIGlmKHN0eWxlPT09J3ByZW1p+
+    "dW0nKXsKIGcuYWRkQ29sb3JTdG9wKDAsJyMwODA4MDgnKTsgZy5hZGRDb2xvclN0b3AoMC41LCcjMTEw+
+    "ZjFmJyk7IGcuYWRkQ29sb3JTdG9wKDEsJyMwZDBkMWUnKTsKIH0gZWxzZSB7CiBnLmFkZENvbG9yU3Rv+
+    "cCgwLCcjMDUwZDFlJyk7IGcuYWRkQ29sb3JTdG9wKDAuNDUsJyMwOTE1MjYnKTsgZy5hZGRDb2xvclN0+
+    "b3AoMSwnIzA3MTAyMCcpOwogfQogY3R4LmZpbGxTdHlsZSA9IGc7CiBjdHguZmlsbFJlY3QoMCwwLDEw+
+    "MDAsMTAwMCk7CiBjb25zdCBBQyA9IEFDQ0VOVChzdHlsZSk7CiBjb25zdCByZyA9IGN0eC5jcmVhdGVS+
+    "YWRpYWxHcmFkaWVudCg3NjAsNDM1LDM1LCA3NjAsNDM1LDM3MCk7CiByZy5hZGRDb2xvclN0b3AoMCxg+
+    "JHtBQ30xQ2ApOwogcmcuYWRkQ29sb3JTdG9wKDAuNTUsYCR7QUN9MEFgKTsKIHJnLmFkZENvbG9yU3Rv+
+    "cCgxLCd0cmFuc3BhcmVudCcpOwogY3R4LmZpbGxTdHlsZSA9IHJnOwogY3R4LmZpbGxSZWN0KDAsMCwx+
+    "MDAwLDEwMDApOwogY29uc3QgbGcgPSBjdHguY3JlYXRlUmFkaWFsR3JhZGllbnQoOTAsOTEwLDUsIDkw+
+    "LDkxMCwxODUpOwogbGcuYWRkQ29sb3JTdG9wKDAsYCR7QUN9MTJgKTsgbGcuYWRkQ29sb3JTdG9wKDEs+
+    "J3RyYW5zcGFyZW50Jyk7CiBjdHguZmlsbFN0eWxlID0gbGc7CiBjdHguZmlsbFJlY3QoMCwwLDEwMDAs+
+    "MTAwMCk7CiBjb25zdCBsYyA9IHN0eWxlPT09J2JyaWdodCcgPyAncmdiYSgzNyw5OSwyMzUsMC4wNCkn+
+    "IDogJ3JnYmEoMjU1LDI1NSwyNTUsMC4wNCknOwogY3R4LnN0cm9rZVN0eWxlID0gbGM7IGN0eC5saW5l+
+    "V2lkdGggPSAxOwogZm9yKGxldCBpPS02MDA7IGk8MTYwMDsgaSs9MTMwKXsKIGN0eC5iZWdpblBhdGgo+
+    "KTsgY3R4Lm1vdmVUbyhpLDApOyBjdHgubGluZVRvKGkrNDgwLDEwMDApOyBjdHguc3Ryb2tlKCk7CiB9+
+    "Cn0KZnVuY3Rpb24gcm91bmRSZWN0KGN0eCx4LHksdyxoLHIpewogY3R4LmJlZ2luUGF0aCgpOwogY3R4+
+    "Lm1vdmVUbyh4K3IseSk7IGN0eC5saW5lVG8oeCt3LXIseSk7CiBjdHguYXJjVG8oeCt3LHkseCt3LHkr+
+    "cixyKTsgY3R4LmxpbmVUbyh4K3cseStoLXIpOwogY3R4LmFyY1RvKHgrdyx5K2gseCt3LXIseStoLHIp+
+    "OyBjdHgubGluZVRvKHgrcix5K2gpOwogY3R4LmFyY1RvKHgseStoLHgseStoLXIscik7IGN0eC5saW5l+
+    "VG8oeCx5K3IpOwogY3R4LmFyY1RvKHgseSx4K3IseSxyKTsgY3R4LmNsb3NlUGF0aCgpOwp9CmZ1bmN0+
+    "aW9uIHNwbGl0TGluZXMoY3R4LCB0ZXh0LCBtYXhXKXsKIGNvbnN0IHdvcmRzID0gdGV4dC5zcGxpdCgn+
+    "ICcpOwogaWYod29yZHMubGVuZ3RoID4gMSl7CiBjb25zdCBsaW5lcyA9IFtdOyBsZXQgY3VyID0gJyc7+
+    "CiBmb3IoY29uc3Qgd29yZCBvZiB3b3Jkcyl7CiBjb25zdCB0ZXN0ID0gY3VyID8gY3VyICsgJyAnICsg+
+    "d29yZCA6IHdvcmQ7CiBpZihjdHgubWVhc3VyZVRleHQodGVzdCkud2lkdGggPiBtYXhXICYmIGN1ciAh+
+    "PT0gJycpewogbGluZXMucHVzaChjdXIpOyBjdXIgPSB3b3JkOwogfSBlbHNlIHsgY3VyID0gdGVzdDsg+
+    "fQogfQogaWYoY3VyKSBsaW5lcy5wdXNoKGN1cik7CiByZXR1cm4gbGluZXM7CiB9CiBjb25zdCBsaW5l+
+    "cyA9IFtdOyBsZXQgY3VyID0gJyc7CiBmb3IoY29uc3QgY2ggb2YgdGV4dCl7CiBjb25zdCB0ID0gY3Vy+
+    "ICsgY2g7CiBpZihjdHgubWVhc3VyZVRleHQodCkud2lkdGggPiBtYXhXICYmIGN1ciAhPT0gJycpewog+
+    "bGluZXMucHVzaChjdXIpOyBjdXIgPSBjaDsKIH0gZWxzZSB7IGN1ciA9IHQ7IH0KIH0KIGlmKGN1cikg+
+    "bGluZXMucHVzaChjdXIpOwogcmV0dXJuIGxpbmVzOwp9CmZ1bmN0aW9uIGNhbGNEaXNjUGN0KG9yaWcs+
+    "IGRpc2MpewogY29uc3QgcGFyc2UgPSBzID0+IHsKIGNvbnN0IG1hbiA9IC/rp4wvLnRlc3QocykgPyAx+
+    "MDAwMCA6IDE7CiBjb25zdCBuID0gcGFyc2VGbG9hdChzLnJlcGxhY2UoL1teMC05Ll0vZywnJykpOwog+
+    "cmV0dXJuIGlzTmFOKG4pID8gMCA6IG4gKiBtYW47CiB9OwogY29uc3QgbyA9IHBhcnNlKG9yaWcpLCBk+
+    "ID0gcGFyc2UoZGlzYyk7CiByZXR1cm4gKG8gPiAwICYmIGQgPiAwICYmIGQgPCBvKSA/IE1hdGgucm91+
+    "bmQoKG8tZCkvbyoxMDApIDogMDsKfQpmdW5jdGlvbiB3cmFwVGV4dChjdHgsdGV4dCx4LHksbWF4Vyxs+
+    "aCl7CiBjb25zdCBsaW5lcyA9IHNwbGl0TGluZXMoY3R4LHRleHQsbWF4Vyk7CiBsaW5lcy5mb3JFYWNo+
+    "KChsbixpKT0+Y3R4LmZpbGxUZXh0KGxuLHgseStpKmxoKSk7Cn0KZnVuY3Rpb24gc2hvd01tcyh0ZXh0+
+    "KXsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdtbXNUZXh0JykudGV4dENvbnRlbnQgPSB0ZXh0Owog+
+    "Y29uc3QgbGVuID0gdGV4dC5sZW5ndGg7CiBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnY2hhckNvdW50+
+    "JykudGV4dENvbnRlbnQgPSBgJHtsZW597J6QYDsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdtbXNC+
+    "b3gnKS5jbGFzc0xpc3QuYWRkKCdzaG93Jyk7Cn0KZnVuY3Rpb24gY29weU1tcygpewogbmF2aWdhdG9y+
+    "LmNsaXBib2FyZC53cml0ZVRleHQobGFzdE1tcykudGhlbigoKT0+ewogdG9hc3QoJ1x1YmIzOFx1YWQ2+
+    "Y1x1YWMwMCBcdWQwNzRcdWI5YmRcdWJjZjRcdWI0ZGNcdWM1ZDAgXHViY2Y1XHVjMGFjXHViNDE4XHVj+
+    "NWM4XHVjMmI1XHViMmM4XHViMmU0IFx1MjcxMycsJ3N1Y2Nlc3MnKTsKIH0pLmNhdGNoKCgpPT50b2Fz+
+    "dCgnXHViY2Y1XHVjMGFjIFx1YzJlNFx1ZDMyOC4gXHVjOWMxXHVjODExIFx1YjRkY1x1Yjc5OFx1YWRm+
+    "OFx1ZDU1OFx1YzVlYyBcdWJjZjVcdWMwYWNcdWQ1NzRcdWM4ZmNcdWMxMzhcdWM2OTQnLCdlcnJvcicp+
+    "KTsKfQpmdW5jdGlvbiBkb3dubG9hZEpwZygpewogY29uc3QgY2FudmFzID0gZG9jdW1lbnQuZ2V0RWxl+
+    "bWVudEJ5SWQoJ3ByZXZpZXdDYW52YXMnKTsKIGxldCBxID0gMC45MDsKIGxldCB1cmw7CiB3aGlsZShx+
+    "ID49IDAuNTApewogdXJsID0gY2FudmFzLnRvRGF0YVVSTCgnaW1hZ2UvanBlZycsIHEpOwogY29uc3Qg+
+    "a2IgPSBNYXRoLnJvdW5kKCh1cmwubGVuZ3RoIC0gJ2RhdGE6aW1hZ2UvanBlZztiYXNlNjQsJy5sZW5n+
+    "dGgpICogMC43NSAvIDEwMjQpOwogaWYgKGtiIDw9IDI1MCkgYnJlYWs7CiBxID0gKyhxIC0gMC4wNSku+
+    "dG9GaXhlZCgyKTsKIH0KIGNvbnN0IGZpbmFsS2IgPSBNYXRoLnJvdW5kKCh1cmwubGVuZ3RoIC0gJ2Rh+
+    "dGE6aW1hZ2UvanBlZztiYXNlNjQsJy5sZW5ndGgpICogMC43NSAvIDEwMjQpOwogdHJ5IHsKIGNvbnN0+
+    "IGEgPSBkb2N1bWVudC5jcmVhdGVFbGVtZW50KCdhJyk7CiBjb25zdCBtb2RlbE5hbWUgPSBsYXN0Rm9y+
+    "bURhdGE/Lm1vZGVsPy5uYW1lIHx8ICdNTVMnOwogYS5kb3dubG9hZCA9IGBNTVNfJHttb2RlbE5hbWV9+
+    "XyR7RGF0ZS5ub3coKX0uanBnYDsKIGEuaHJlZiA9IHVybDsKIGEuY2xpY2soKTsKIHRvYXN0KGDri6Ts+
+    "mrTroZzrk5wg7JmE66OMICgke2ZpbmFsS2J9S0IsIO2SiOyniCAke01hdGgucm91bmQocSoxMDApfSUp+
+    "IOKck2AsJ3N1Y2Nlc3MnKTsKIH0gY2F0Y2goZSl7CiB0b2FzdCgnXHViMmU0XHVjNmI0XHViODVjXHVi+
+    "NGRjIFx1YzJlNFx1ZDMyODogY2FudmFzXHVhYzAwIFx1YzYyNFx1YzVmYyh0YWludGVkKVx1YjQxOFx1+
+    "YzVjOFx1YzJiNVx1YjJjOFx1YjJlNC4gXHVjOWMxXHVjODExIFx1YzVjNVx1Yjg1Y1x1YjRkYyBcdWM3+
+    "NzRcdWJiZjhcdWM5YzBcdWI5N2MgXHVjMGFjXHVjNmE5XHVkNTc0XHVjOGZjXHVjMTM4XHVjNjk0Jywn+
+    "ZXJyb3InKTsKIH0KfQ=="))
 </script>
 </body>
 </html>
